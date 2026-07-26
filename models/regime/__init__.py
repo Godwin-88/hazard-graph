@@ -1,0 +1,1 @@
+"""HazardGraph — Climate regime detection models package."""

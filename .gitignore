@@ -1,0 +1,53 @@
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment files (keep .env.example)
+.env
+.env.*
+!.env.example
+
+# Python packaging
+*.egg-info/
+dist/
+build/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database dumps
+*.db
+*.sqlite
+*.sqlite3
+master.cypher
+
+# Node
+node_modules/
+
+# Cache
+.cache/
+.pytest_cache/
+.mypy_cache/
+
+# Logs
+*.log
+
+# Bevel — do not share secrets
+.bevel/do_not_share/

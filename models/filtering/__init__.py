@@ -1,0 +1,1 @@
+"""HazardGraph — Signal filtering models package."""

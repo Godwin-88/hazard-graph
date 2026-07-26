@@ -1,0 +1,57 @@
+{
+  "ethiopia": {
+    "current_season": "meher",
+    "season_months": {"meher": "Jun-Sep", "belg": "Feb-May"},
+    "crops": ["teff", "maize", "sorghum", "wheat"]
+  },
+  "kenya": {
+    "current_season": "long_rains",
+    "season_months": {"long_rains": "Mar-May", "short_rains": "Oct-Dec"},
+    "crops": ["maize", "tea", "coffee", "beans"]
+  },
+  "somalia": {
+    "current_season": "gu",
+    "season_months": {"gu": "Apr-Jun", "deyr": "Oct-Dec"},
+    "crops": ["sorghum", "maize", "cowpeas"]
+  },
+  "sudan": {
+    "current_season": "kharif",
+    "season_months": {"kharif": "Jun-Sep"},
+    "crops": ["sorghum", "millet", "groundnuts"]
+  },
+  "south_sudan": {
+    "current_season": "wet",
+    "season_months": {"wet": "May-Oct", "dry": "Nov-Apr"},
+    "crops": ["sorghum", "maize", "cassava"]
+  },
+  "uganda": {
+    "current_season": "long_rains",
+    "season_months": {"long_rains": "Mar-May", "short_rains": "Sep-Nov"},
+    "crops": ["banana", "coffee", "maize", "beans"]
+  },
+  "djibouti": {
+    "current_season": "dry",
+    "season_months": {"wet": "Oct-Apr", "dry": "May-Sep"},
+    "crops": []
+  },
+  "eritrea": {
+    "current_season": "kremti",
+    "season_months": {"kremti": "Jun-Sep", "bahri": "Oct-May"},
+    "crops": ["sorghum", "millet", "barley"]
+  },
+  "tanzania": {
+    "current_season": "masika",
+    "season_months": {"masika": "Mar-May", "vuli": "Oct-Dec"},
+    "crops": ["maize", "rice", "cashew", "coffee"]
+  },
+  "burundi": {
+    "current_season": "long_rains",
+    "season_months": {"long_rains": "Feb-May", "short_rains": "Sep-Nov"},
+    "crops": ["banana", "coffee", "beans", "maize"]
+  },
+  "rwanda": {
+    "current_season": "long_rains",
+    "season_months": {"long_rains": "Mar-May", "short_rains": "Sep-Nov"},
+    "crops": ["coffee", "tea", "banana", "beans"]
+  }
+}

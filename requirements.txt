@@ -1,0 +1,49 @@
+# HazardGraph — Production Dependencies
+# Python 3.12+
+
+# Core
+fastapi==0.140.0
+uvicorn==0.51.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+python-dotenv==1.2.2
+
+# Async & HTTP
+httpx==0.28.1
+
+# Databases
+neo4j==6.2.0
+sqlalchemy==2.0.51
+asyncpg==0.31.0
+redis==8.0.1
+
+# Scheduling
+APScheduler==3.11.3
+
+# LLM
+groq==1.6.0
+
+# RSS parsing
+feedparser==6.0.12
+
+# Data processing
+numpy==2.2.6
+pandas==3.0.5
+scipy==1.13.1
+
+# Causal discovery
+lingam==1.13.0
+
+# HMM regime detection
+hmmlearn==0.3.3
+
+# ML / stats
+scikit-learn==1.9.0
+statsmodels==0.14.6
+
+# Logging
+structlog==24.4.0
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0

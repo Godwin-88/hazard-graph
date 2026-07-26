@@ -1,0 +1,1 @@
+"""HazardGraph — Causal discovery package (VARLiNGAM engine + edge writing)."""
