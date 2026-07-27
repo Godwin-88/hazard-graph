@@ -1,26 +1,35 @@
 import { useEffect, useState } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { API_BASE_URL } from '@/lib/constants'
+import { useAuth } from '@/hooks/useAuth'
 
 interface NavLinkProps {
   href: string
   label: string
   active?: boolean
+  badge?: number
 }
 
-function NavLink({ href, label, active }: NavLinkProps) {
+function NavLink({ href, label, active, badge }: NavLinkProps) {
+  const navigate = useNavigate()
   return (
-    <a
-      href={href}
+    <button
+      onClick={() => navigate(href)}
       className={cn(
-        'px-3 py-2 text-sm font-medium transition-colors',
+        'relative px-3 py-2 text-sm font-medium transition-colors',
         active
           ? 'text-risk-green border-b-2 border-risk-green'
           : 'text-text-secondary hover:text-text-primary',
       )}
     >
       {label}
-    </a>
+      {badge !== undefined && badge > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-risk-red px-1 text-[10px] font-bold text-white">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
+    </button>
   )
 }
 
