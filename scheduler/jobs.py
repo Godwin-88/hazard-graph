@@ -200,55 +200,36 @@ async def _run_sde_simulation() -> None:
 
 
 async def _run_risk_scoring() -> None:
-    """Weekly compound risk scoring pipeline."""
+    """Weekly compound risk scoring pipeline using explicit DAG executor."""
     job_name = "risk_scoring"
     logger.info("Starting scheduled job: %s", job_name)
     try:
         from db.neo4j_client import neo4j_client
-        from risk.scoring_service import compute_risk_scores
-        from models.ensemble.bma_engine import BMAEngine
-        from models.stochastic.rainfall_sde import RainfallSDE
-        from models.ensemble.kelly_prioritiser import update_alert_kelly_scores
         from db.redis_client import redis_client
         from db.postgres_client import async_session_factory
+        from pipeline.hazard_pipeline import build_pipeline
 
-        scoring_results = await compute_risk_scores(neo4j_client)
-        sde_results = await RainfallSDE().run_all_regions(neo4j_client)
-
-        bma_results_local = []
-        for score_result in scoring_results:
-            sde_data = sde_results.get(score_result.region_id, {})
-
-            hmm_cache = await redis_client.get(
-                f"regime_posteriors:{score_result.region_id}"
+        async with async_session_factory() as postgres_session:
+            dag = await build_pipeline(
+                neo4j_session=neo4j_client,
+                postgres_session=postgres_session,
+                redis_client=redis_client,
             )
-            hmm_posteriors = (
-                json.loads(hmm_cache).get("posteriors", {})
-                if hmm_cache
-                else {}
+            results = await dag.execute(
+                neo4j_session=neo4j_client,
+                postgres_session=postgres_session,
+                redis_client=redis_client,
             )
 
-            async with async_session_factory() as postgres_session:
-                bma_result = await BMAEngine().compute_posterior(
-                    region_id=score_result.region_id,
-                    scoring_result=score_result,
-                    sde_result=sde_data,
-                    hmm_posteriors=hmm_posteriors,
-                    neo4j_session=neo4j_client,
-                    postgres_session=postgres_session,
-                )
-                bma_results_local.append(bma_result)
-
-        async with async_session_factory() as kelly_session:
-            await update_alert_kelly_scores(bma_results_local, kelly_session)
         await redis_client.set("risk:scores", "", ttl=0)
 
+        records = len(results.get("scoring", []))
         await _log_job_run(
             job_name=job_name,
             status="completed",
-            records_processed=len(scoring_results),
+            records_processed=records,
         )
-        logger.info("Risk scoring complete: %d regions", len(scoring_results))
+        logger.info("Risk scoring DAG complete: %d regions, %d nodes executed", records, len(results))
     except Exception as exc:
         logger.error("Risk scoring failed: %s", exc)
         await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
@@ -342,7 +323,121 @@ def register_jobs() -> None:
         max_instances=1,
     )
 
+    # LSTM forecast: weekly Monday 09:30 EAT (06:30 UTC)
+    scheduler.add_job(
+        _run_lstm_forecast,
+        trigger=CronTrigger(day_of_week="mon", hour=6, minute=30, timezone="UTC"),
+        id="lstm_forecast",
+        name="LSTM Drought Forecast",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
+    # XGBoost forecast: weekly Monday 09:45 EAT (06:45 UTC)
+    scheduler.add_job(
+        _run_xgb_forecast,
+        trigger=CronTrigger(day_of_week="mon", hour=6, minute=45, timezone="UTC"),
+        id="xgb_forecast",
+        name="XGBoost Food Crisis Prediction",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
+    # PageRank update: weekly Monday 10:00 EAT (07:00 UTC)
+    scheduler.add_job(
+        _run_pagerank_update,
+        trigger=CronTrigger(day_of_week="mon", hour=7, minute=0, timezone="UTC"),
+        id="pagerank_update",
+        name="PageRank Vulnerability Update",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
     logger.info("Registered %d scheduled jobs", len(scheduler.get_jobs()))
+
+
+async def _run_lstm_forecast() -> None:
+    """Weekly LSTM drought forecast for all regions."""
+    job_name = "lstm_forecast"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from db.neo4j_client import neo4j_client
+        from models.ml.lstm_drought import LSTMDroughtForecaster
+        from models.ml.feature_pipeline import FeaturePipeline
+
+        assembler = FeaturePipeline()
+        forecaster = LSTMDroughtForecaster()
+        async with neo4j_client.session() as session:
+            results = await forecaster.run_all_regions(assembler, session)
+
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=len(results),
+        )
+        logger.info("LSTM forecast complete: %d regions", len(results))
+    except Exception as exc:
+        logger.error("LSTM forecast failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
+async def _run_xgb_forecast() -> None:
+    """Weekly XGBoost food crisis prediction for all regions."""
+    job_name = "xgb_forecast"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from db.neo4j_client import neo4j_client
+        from models.ml.xgb_food_crisis import XGBFoodCrisisPredictor
+
+        predictor = XGBFoodCrisisPredictor()
+        async with neo4j_client.session() as session:
+            results = await predictor.run_all_regions(session)
+
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=len(results),
+        )
+        logger.info("XGBoost forecast complete: %d regions", len(results))
+    except Exception as exc:
+        logger.error("XGBoost forecast failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
+async def _run_pagerank_update() -> None:
+    """Weekly PageRank vulnerability update for all regions."""
+    job_name = "pagerank_update"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from db.neo4j_client import neo4j_client
+        from risk.scoring_service import get_latest_risk_scores
+        from risk.vulnerability_data import get_all_vulnerability_multipliers
+        from models.network.pagerank_vulnerability import RegionalVulnerabilityNetwork
+
+        # Get current risk scores
+        async with neo4j_client.session() as session:
+            risk_scores = await get_latest_risk_scores(session)
+
+        vulnerability_multipliers = get_all_vulnerability_multipliers()
+
+        network = RegionalVulnerabilityNetwork()
+        results = network.compute_pagerank(risk_scores, vulnerability_multipliers)
+
+        async with neo4j_client.session() as session:
+            await network.update_neo4j(results, session)
+
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=len(results),
+        )
+        logger.info("PageRank update complete: %d regions", len(results))
+    except Exception as exc:
+        logger.error("PageRank update failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
 
 
 def start_scheduler() -> None:

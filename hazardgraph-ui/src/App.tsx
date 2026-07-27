@@ -6,6 +6,7 @@ import { QuantifayaHeader } from './components/layout/QuantifayaHeader';
 import { Dashboard } from './pages/Dashboard';
 import GraphExplorer from './pages/GraphExplorer';
 import AlertReview from './pages/AlertReview';
+import Analytics from './pages/Analytics';
 import Login from './pages/Login';
 
 const queryClient = new QueryClient({
@@ -60,6 +61,17 @@ export default function App() {
               element={
                 <ProtectedRoute requiredRole="officer">
                   <AlertReview />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/analytics"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Analytics />
+                  </Layout>
                 </ProtectedRoute>
               }
             />

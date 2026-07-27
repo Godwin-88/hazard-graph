@@ -1,0 +1,1 @@
+"""HazardGraph — ML pipeline DAG executor."""

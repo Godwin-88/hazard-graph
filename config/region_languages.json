@@ -1,13 +1,13 @@
 {
-  "ethiopia": "am",
-  "kenya": "sw",
-  "somalia": "so",
-  "sudan": "ar",
-  "south_sudan": "en",
-  "uganda": "en",
-  "djibouti": "fr",
-  "eritrea": "ti",
-  "tanzania": "sw",
-  "burundi": "rn",
-  "rwanda": "rw"
+  "ethiopia":    {"language": "amharic",  "lang_code": "am", "greeting": "ሰላም"},
+  "kenya":       {"language": "swahili",  "lang_code": "sw", "greeting": "Habari"},
+  "somalia":     {"language": "somali",   "lang_code": "so", "greeting": "Salaan"},
+  "sudan":       {"language": "arabic",   "lang_code": "ar", "greeting": "مرحبا"},
+  "south_sudan": {"language": "english",  "lang_code": "en", "greeting": "Hello"},
+  "uganda":      {"language": "swahili",  "lang_code": "sw", "greeting": "Habari"},
+  "djibouti":    {"language": "somali",   "lang_code": "so", "greeting": "Salaan"},
+  "eritrea":     {"language": "tigrinya", "lang_code": "ti", "greeting": "ሰላም"},
+  "tanzania":    {"language": "swahili",  "lang_code": "sw", "greeting": "Habari"},
+  "burundi":     {"language": "french",   "lang_code": "fr", "greeting": "Bonjour"},
+  "rwanda":      {"language": "french",   "lang_code": "fr", "greeting": "Bonjour"}
 }

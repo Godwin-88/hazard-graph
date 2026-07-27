@@ -32,6 +32,40 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
 
+    # Africa's Talking
+    at_username: str = "sandbox"
+    at_api_key: str = ""
+    at_env: str = "sandbox"
+    at_sender: str = "HAZARDGRPH"
+
+    # JWT
+    jwt_secret_key: str = "change-this-to-a-32-char-minimum-secret"
+    jwt_algorithm: str = "HS256"
+
+    @property
+    def AT_USERNAME(self) -> str:
+        return self.at_username
+
+    @property
+    def AT_API_KEY(self) -> str:
+        return self.at_api_key
+
+    @property
+    def AT_ENV(self) -> str:
+        return self.at_env
+
+    @property
+    def AT_SENDER(self) -> str:
+        return self.at_sender
+
+    @property
+    def JWT_SECRET_KEY(self) -> str:
+        return self.jwt_secret_key
+
+    @property
+    def JWT_ALGORITHM(self) -> str:
+        return self.jwt_algorithm
+
     @property
     def cors_origin_list(self) -> List[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

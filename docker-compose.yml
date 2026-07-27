@@ -1,0 +1,97 @@
+version: '3.9'
+
+services:
+
+  neo4j:
+    image: neo4j:5.21-community
+    container_name: hazardgraph-neo4j
+    ports:
+      - "7474:7474"   # Browser UI
+      - "7687:7687"   # Bolt protocol (driver connects here)
+    environment:
+      NEO4J_AUTH: neo4j/hazardgraph2026
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 1G
+      NEO4J_dbms_memory_pagecache_size: 512m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./migrations:/migrations     # mount migration scripts
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "hazardgraph2026",
+             "RETURN 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: hazardgraph-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: hazardgraph
+      POSTGRES_USER: hazardgraph
+      POSTGRES_PASSWORD: hazardgraph2026
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_postgres.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hazardgraph -d hazardgraph"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: hazardgraph-redis
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1
+      --loglevel warning
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
+    build: .
+    container_name: hazardgraph-api
+    ports:
+      - "8000:8000"
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: hazardgraph2026
+      POSTGRES_URL: postgresql+asyncpg://hazardgraph:hazardgraph2026@postgres:5432/hazardgraph
+      REDIS_URL: redis://redis:6379
+    env_file: .env
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app                        # hot reload in dev
+      - model_store:/app/models/saved
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  postgres_data:
+  redis_data:
+  model_store:

@@ -1,0 +1,1 @@
+"""HazardGraph — Authentication: JWT, bcrypt, rate limiting."""

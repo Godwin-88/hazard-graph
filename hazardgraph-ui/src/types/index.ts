@@ -57,3 +57,31 @@ export interface RegimeInfo {
   region_id: string
   posterior: number
 }
+
+export interface LSTMForecast {
+  region_id: string
+  model: string
+  predicted_phase: number
+  confidence: number
+  model_agreement: number
+  probabilities: string
+  created_at: string
+}
+
+export interface XGBForecast {
+  region_id: string
+  model: string
+  p_crisis: number
+  raw_probability: number
+  top_shap_features: string
+  prediction_date: string
+  created_at: string
+}
+
+export interface AllForecasts {
+  region_id: string
+  lstm: { predicted_phase: number; confidence: number } | null
+  xgboost: { p_crisis: number } | null
+  sde: { p_drought: number; p_flood: number } | null
+  bma: { score: number } | null
+}

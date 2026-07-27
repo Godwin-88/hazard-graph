@@ -1,0 +1,1 @@
+"""HazardGraph — Alert pipeline: LLM advisory generation, SMS dispatch, feedback handling."""

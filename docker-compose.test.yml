@@ -1,0 +1,52 @@
+version: '3.9'
+
+services:
+  neo4j-test:
+    image: neo4j:5.21-community
+    container_name: hazardgraph-neo4j-test
+    ports:
+      - "7475:7474"
+      - "7688:7687"
+    environment:
+      NEO4J_AUTH: neo4j/testpassword
+      NEO4J_dbms_memory_heap_max__size: 512m
+      NEO4J_dbms_memory_pagecache_size: 256m
+    tmpfs:
+      - /data          # in-memory for tests — no disk persistence
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "testpassword",
+             "RETURN 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 40s
+
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: hazardgraph-postgres-test
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: hazardgraph_test
+      POSTGRES_USER: hazardgraph_test
+      POSTGRES_PASSWORD: testpassword
+    tmpfs:
+      - /var/lib/postgresql/data   # in-memory for speed
+    healthcheck:
+      test: ["CMD-SHELL",
+             "pg_isready -U hazardgraph_test -d hazardgraph_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis-test:
+    image: redis:7.2-alpine
+    container_name: hazardgraph-redis-test
+    ports:
+      - "6380:6379"
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 5

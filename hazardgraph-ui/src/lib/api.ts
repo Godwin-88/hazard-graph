@@ -5,6 +5,8 @@ import type {
   GraphNode,
   GraphEdge,
   RegimeInfo,
+  LSTMForecast,
+  AllForecasts,
 } from '@/types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -55,4 +57,20 @@ export async function triggerScoring(): Promise<RiskScoresResponse> {
     throw new Error(`Trigger failed: ${res.status}`)
   }
   return res.json()
+}
+
+export async function fetchLSTMForecast(
+  regionId: string,
+): Promise<LSTMForecast> {
+  return fetchJson<LSTMForecast>(
+    `${BASE_URL}/api/v1/forecast/lstm/${regionId}`,
+  )
+}
+
+export async function fetchAllForecasts(
+  regionId: string,
+): Promise<AllForecasts> {
+  return fetchJson<AllForecasts>(
+    `${BASE_URL}/api/v1/forecast/all/${regionId}`,
+  )
 }
