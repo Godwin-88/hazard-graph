@@ -1,0 +1,148 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Ethiopia",
+        "country_code": "ETH",
+        "centroid_lat": 9.145,
+        "centroid_lon": 40.489
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[33.0, 3.4], [48.0, 3.4], [48.0, 15.0], [33.0, 15.0], [33.0, 3.4]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Kenya",
+        "country_code": "KEN",
+        "centroid_lat": -0.023,
+        "centroid_lon": 37.906
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[33.9, -4.7], [41.9, -4.7], [41.9, 5.0], [33.9, 5.0], [33.9, -4.7]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Somalia",
+        "country_code": "SOM",
+        "centroid_lat": 5.152,
+        "centroid_lon": 46.199
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[41.0, -1.8], [51.4, -1.8], [51.4, 12.0], [41.0, 12.0], [41.0, -1.8]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Sudan",
+        "country_code": "SDN",
+        "centroid_lat": 12.862,
+        "centroid_lon": 30.217
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[21.8, 8.7], [38.6, 8.7], [38.6, 22.2], [21.8, 22.2], [21.8, 8.7]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "South Sudan",
+        "country_code": "SSD",
+        "centroid_lat": 6.877,
+        "centroid_lon": 31.307
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[23.4, 3.5], [35.9, 3.5], [35.9, 12.2], [23.4, 12.2], [23.4, 3.5]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Uganda",
+        "country_code": "UGA",
+        "centroid_lat": 1.373,
+        "centroid_lon": 32.290
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[29.5, -1.5], [35.0, -1.5], [35.0, 4.2], [29.5, 4.2], [29.5, -1.5]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Djibouti",
+        "country_code": "DJI",
+        "centroid_lat": 11.825,
+        "centroid_lon": 42.590
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[41.7, 10.9], [43.5, 10.9], [43.5, 12.7], [41.7, 12.7], [41.7, 10.9]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Eritrea",
+        "country_code": "ERI",
+        "centroid_lat": 15.179,
+        "centroid_lon": 39.782
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[36.4, 12.4], [43.2, 12.4], [43.2, 18.0], [36.4, 18.0], [36.4, 12.4]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Tanzania",
+        "country_code": "TZA",
+        "centroid_lat": -6.369,
+        "centroid_lon": 34.888
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[29.3, -11.7], [40.4, -11.7], [40.4, -1.0], [29.3, -1.0], [29.3, -11.7]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Burundi",
+        "country_code": "BDI",
+        "centroid_lat": -3.373,
+        "centroid_lon": 29.918
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[28.9, -4.5], [30.9, -4.5], [30.9, -2.3], [28.9, -2.3], [28.9, -4.5]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Rwanda",
+        "country_code": "RWA",
+        "centroid_lat": -1.940,
+        "centroid_lon": 29.873
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[28.8, -2.8], [30.9, -2.8], [30.9, -1.0], [28.8, -1.0], [28.8, -2.8]]]
+      }
+    }
+  ]
+}

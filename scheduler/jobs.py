@@ -4,6 +4,7 @@ Uses AsyncIOScheduler integrated into the FastAPI lifespan.
 Each job logs its run to the PostgreSQL job_runs table.
 """
 
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -175,6 +176,84 @@ async def _run_ipc_ingestion() -> None:
         await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
 
 
+async def _run_sde_simulation() -> None:
+    """Weekly SDE rainfall simulation for all regions."""
+    job_name = "sde_simulation"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from db.neo4j_client import neo4j_client
+        from models.stochastic.rainfall_sde import RainfallSDE
+
+        engine = RainfallSDE()
+        results = await engine.run_all_regions(neo4j_client)
+        records = len(results)
+
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=records,
+        )
+        logger.info("SDE simulation complete: %d regions", records)
+    except Exception as exc:
+        logger.error("SDE simulation failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
+async def _run_risk_scoring() -> None:
+    """Weekly compound risk scoring pipeline."""
+    job_name = "risk_scoring"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from db.neo4j_client import neo4j_client
+        from risk.scoring_service import compute_risk_scores
+        from models.ensemble.bma_engine import BMAEngine
+        from models.stochastic.rainfall_sde import RainfallSDE
+        from models.ensemble.kelly_prioritiser import update_alert_kelly_scores
+        from db.redis_client import redis_client
+        from db.postgres_client import async_session_factory
+
+        scoring_results = await compute_risk_scores(neo4j_client)
+        sde_results = await RainfallSDE().run_all_regions(neo4j_client)
+
+        bma_results_local = []
+        for score_result in scoring_results:
+            sde_data = sde_results.get(score_result.region_id, {})
+
+            hmm_cache = await redis_client.get(
+                f"regime_posteriors:{score_result.region_id}"
+            )
+            hmm_posteriors = (
+                json.loads(hmm_cache).get("posteriors", {})
+                if hmm_cache
+                else {}
+            )
+
+            async with async_session_factory() as postgres_session:
+                bma_result = await BMAEngine().compute_posterior(
+                    region_id=score_result.region_id,
+                    scoring_result=score_result,
+                    sde_result=sde_data,
+                    hmm_posteriors=hmm_posteriors,
+                    neo4j_session=neo4j_client,
+                    postgres_session=postgres_session,
+                )
+                bma_results_local.append(bma_result)
+
+        async with async_session_factory() as kelly_session:
+            await update_alert_kelly_scores(bma_results_local, kelly_session)
+        await redis_client.set("risk:scores", "", ttl=0)
+
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=len(scoring_results),
+        )
+        logger.info("Risk scoring complete: %d regions", len(scoring_results))
+    except Exception as exc:
+        logger.error("Risk scoring failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
 def register_jobs() -> None:
     """Register all scheduled jobs on the global scheduler."""
     # ICPAC RSS fetch: daily at 06:00 EAT (03:00 UTC)
@@ -236,6 +315,28 @@ def register_jobs() -> None:
         trigger=CronTrigger(day_of_week="mon", hour=5, minute=30, timezone="UTC"),
         id="ipc_ingestion",
         name="IPC Phase Ingestion",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
+    # SDE rainfall simulation: weekly Monday 07:45 EAT (04:45 UTC)
+    scheduler.add_job(
+        _run_sde_simulation,
+        trigger=CronTrigger(day_of_week="mon", hour=4, minute=45, timezone="UTC"),
+        id="sde_simulation",
+        name="Rainfall SDE Simulation",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
+    # Risk scoring pipeline: weekly Monday 09:00 EAT (06:00 UTC)
+    scheduler.add_job(
+        _run_risk_scoring,
+        trigger=CronTrigger(day_of_week="mon", hour=6, minute=0, timezone="UTC"),
+        id="risk_scoring",
+        name="Compound Risk Scoring",
         replace_existing=True,
         misfire_grace_time=3600,
         max_instances=1,
