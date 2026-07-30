@@ -52,7 +52,9 @@ export default function App() {
               path="/graph"
               element={
                 <ProtectedRoute>
-                  <GraphExplorer />
+                  <Layout>
+                    <GraphExplorer />
+                  </Layout>
                 </ProtectedRoute>
               }
             />
@@ -61,7 +63,9 @@ export default function App() {
               path="/alerts"
               element={
                 <ProtectedRoute requiredRole="officer">
-                  <AlertReview />
+                  <Layout>
+                    <AlertReview />
+                  </Layout>
                 </ProtectedRoute>
               }
             />

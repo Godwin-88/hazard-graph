@@ -23,7 +23,7 @@ export default function GraphExplorer() {
   const isLoading = nodesLoading || edgesLoading;
 
   return (
-    <div className="flex h-screen flex-col bg-[#0A0F1E]">
+    <div className="flex h-full flex-col">
       {/* Header */}
       <div className="border-b border-gray-800 px-6 py-3">
         <div className="flex items-center justify-between">

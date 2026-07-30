@@ -120,7 +120,7 @@ class GNNPolicyNetwork(nn.Module):
         x = self.norm2(x)
 
         action_logits = self.actor_head(x)  # (N, 4)
-        state_value = self.critic_head(x.mean(0))  # global mean pool → (1,)
+        state_value = self.critic_head(x.mean(0)).squeeze(-1)  # global mean pool → scalar
         return action_logits, state_value
 
     def act(

@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { QuantifayaHeader } from '@/components/layout/QuantifayaHeader'
 import { RiskChoropleth } from '@/components/map/RiskChoropleth'
 import { RiskScoreList } from '@/components/risk/RiskScoreList'
 import { useRiskScores } from '@/hooks/useRiskScores'
@@ -28,10 +27,7 @@ export function Dashboard() {
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      {/* Row 1: Header */}
-      <QuantifayaHeader />
-
-      {/* Row 2: Two-column layout */}
+      {/* Two-column layout */}
       <div className="flex flex-1 gap-4 overflow-hidden p-4">
         {/* Left: Map */}
         <div className="flex w-[65%] flex-col">

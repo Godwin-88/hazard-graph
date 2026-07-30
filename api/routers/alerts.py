@@ -86,7 +86,7 @@ class UptakeAnalyticsOut(BaseModel):
 # ── Routes ─────────────────────────────────────────────────
 
 
-@router.get("/alerts", response_model=list[AlertOut])
+@router.get("/", response_model=list[AlertOut])
 async def list_alerts(
     db: DbSession,
     user=Depends(get_current_user),
@@ -145,7 +145,7 @@ async def list_alerts(
     return alerts
 
 
-@router.get("/alerts/{alert_id}", response_model=AlertOut)
+@router.get("/{alert_id}", response_model=AlertOut)
 async def get_alert(
     alert_id: int,
     db: DbSession,
@@ -187,7 +187,7 @@ async def get_alert(
     )
 
 
-@router.patch("/alerts/{alert_id}")
+@router.patch("/{alert_id}")
 async def patch_alert(
     alert_id: int,
     body: AlertPatchRequest,
@@ -268,7 +268,7 @@ async def patch_alert(
     return {"detail": f"Alert {body.action}d successfully", "alert_id": alert_id}
 
 
-@router.post("/alerts/{alert_id}/dispatch", response_model=DispatchResultOut)
+@router.post("/{alert_id}/dispatch", response_model=DispatchResultOut)
 async def dispatch_alert(
     alert_id: int,
     db: DbSession,
@@ -317,7 +317,7 @@ async def dispatch_alert(
         raise HTTPException(status_code=500, detail=f"Dispatch failed: {exc}")
 
 
-@router.get("/alerts/{alert_id}/responses", response_model=list[AlertResponseOut])
+@router.get("/{alert_id}/responses", response_model=list[AlertResponseOut])
 async def get_alert_responses(
     alert_id: int,
     db: DbSession,
@@ -350,7 +350,7 @@ async def get_alert_responses(
     ]
 
 
-@router.get("/alerts/analytics/uptake", response_model=list[UptakeAnalyticsOut])
+@router.get("/analytics/uptake", response_model=list[UptakeAnalyticsOut])
 async def get_uptake_analytics(
     db: DbSession,
     redis: RedisDep,
@@ -410,7 +410,7 @@ async def get_uptake_analytics(
     return analytics
 
 
-@router.post("/alerts/generate")
+@router.post("/generate")
 async def generate_alerts(
     db: DbSession,
     user=Depends(require_admin),
