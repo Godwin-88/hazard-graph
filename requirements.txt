@@ -17,6 +17,9 @@ sqlalchemy==2.0.51
 asyncpg==0.31.0
 redis==8.0.1
 
+# Form data parsing (for webhooks)
+python-multipart==0.0.18
+
 # Scheduling
 APScheduler==3.11.3
 

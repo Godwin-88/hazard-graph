@@ -84,5 +84,14 @@ class Neo4jClient:
         return {"connected": connected, "node_count": node_count}
 
 
+# ── FastAPI dependency ────────────────────────────────
+
+
+async def get_neo4j_session():
+    """FastAPI dependency yielding a Neo4j session from the singleton client."""
+    async with neo4j_client.get_session() as session:
+        yield session
+
+
 # Singleton
 neo4j_client = Neo4jClient()

@@ -9,7 +9,7 @@ NO auth on these routes — AT posts here directly.
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Depends, Form, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 

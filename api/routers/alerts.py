@@ -19,65 +19,16 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import DbSession, RedisDep, get_db, get_redis
-from auth.jwt_service import verify_token
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from auth.jwt_service import (
+    verify_token,
+    get_current_user,
+    require_officer,
+    require_admin,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
-security = HTTPBearer(auto_error=False)
-
-
-# ── Dependencies ───────────────────────────────────────────
-
-
-async def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    redis: RedisDep = Depends(get_redis),
-):
-    """Extract and verify JWT from Authorization header."""
-    if not credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
-    token = credentials.credentials
-
-    # Check blacklist
-    try:
-        is_blacklisted = await redis.get(f"blacklist:{token}")
-        if is_blacklisted:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has been revoked",
-            )
-    except HTTPException:
-        raise
-    except Exception:
-        pass
-
-    payload = verify_token(token)
-    return payload
-
-
-async def require_officer(user=Depends(get_current_user)):
-    """Require officer or admin role."""
-    if user.get("role") not in ("officer", "admin"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Officer or admin role required",
-        )
-    return user
-
-
-async def require_admin(user=Depends(get_current_user)):
-    """Require admin role."""
-    if user.get("role") != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin role required",
-        )
-    return user
 
 
 # ── Schemas ────────────────────────────────────────────────
@@ -137,12 +88,12 @@ class UptakeAnalyticsOut(BaseModel):
 
 @router.get("/alerts", response_model=list[AlertOut])
 async def list_alerts(
+    db: DbSession,
+    user=Depends(get_current_user),
     status_filter: Optional[str] = Query(None, alias="status"),
     region_id: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    db: DbSession = Depends(get_db),
-    user=Depends(get_current_user),
 ):
     """List alerts with optional status and region filters."""
     conditions = []
@@ -197,7 +148,7 @@ async def list_alerts(
 @router.get("/alerts/{alert_id}", response_model=AlertOut)
 async def get_alert(
     alert_id: int,
-    db: DbSession = Depends(get_db),
+    db: DbSession,
     user=Depends(get_current_user),
 ):
     """Get single alert with full detail."""
@@ -240,7 +191,7 @@ async def get_alert(
 async def patch_alert(
     alert_id: int,
     body: AlertPatchRequest,
-    db: DbSession = Depends(get_db),
+    db: DbSession,
     user=Depends(require_officer),
 ):
     """Approve or reject an alert."""
@@ -320,7 +271,7 @@ async def patch_alert(
 @router.post("/alerts/{alert_id}/dispatch", response_model=DispatchResultOut)
 async def dispatch_alert(
     alert_id: int,
-    db: DbSession = Depends(get_db),
+    db: DbSession,
     user=Depends(require_officer),
 ):
     """Dispatch an approved alert via Africa's Talking SMS."""
@@ -369,7 +320,7 @@ async def dispatch_alert(
 @router.get("/alerts/{alert_id}/responses", response_model=list[AlertResponseOut])
 async def get_alert_responses(
     alert_id: int,
-    db: DbSession = Depends(get_db),
+    db: DbSession,
     user=Depends(get_current_user),
 ):
     """Get all Y/N responses for an alert."""
@@ -401,8 +352,8 @@ async def get_alert_responses(
 
 @router.get("/alerts/analytics/uptake", response_model=list[UptakeAnalyticsOut])
 async def get_uptake_analytics(
-    db: DbSession = Depends(get_db),
-    redis: RedisDep = Depends(get_redis),
+    db: DbSession,
+    redis: RedisDep,
     user=Depends(get_current_user),
 ):
     """Get 30-day uptake analytics per region. Redis cached 15 min."""
@@ -461,7 +412,7 @@ async def get_uptake_analytics(
 
 @router.post("/alerts/generate")
 async def generate_alerts(
-    db: DbSession = Depends(get_db),
+    db: DbSession,
     user=Depends(require_admin),
 ):
     """Manually trigger advisory generation for all triggered regions."""
