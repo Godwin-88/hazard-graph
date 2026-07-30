@@ -22,6 +22,7 @@ NODE_FEATURES = [
 ]
 N_FEATURES = len(NODE_FEATURES)  # 10
 N_REGIONS = 11
+N_ACTIONS = 4  # 0=none, 1=low, 2=med, 3=high alert
 REGIONS = [
     'kenya', 'ethiopia', 'somalia', 'sudan', 'south_sudan',
     'uganda', 'djibouti', 'eritrea', 'tanzania', 'burundi', 'rwanda'

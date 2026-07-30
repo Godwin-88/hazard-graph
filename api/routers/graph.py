@@ -62,7 +62,7 @@ async def get_all_nodes():
             pass
 
     query = """
-    MATCH (n) WHERE n.active <> false
+    MATCH (n) WHERE n.active IS NULL OR n.active <> false
     OPTIONAL MATCH (n)-[r]->(m)
     RETURN n, r, m LIMIT 500
     """
@@ -100,6 +100,45 @@ async def get_all_nodes():
         logger.warning("Failed to cache graph nodes: %s", exc)
 
     return response
+
+
+@router.get("/graph/edges")
+async def get_all_edges():
+    """Return all active edges for graph visualisation.
+
+    Cached in Redis for 5 minutes.
+    """
+    cached = await redis_client.get("graph:edges")
+    if cached:
+        try:
+            return json.loads(cached)
+        except Exception:
+            pass
+
+    query = """
+    MATCH (n) WHERE n.active IS NULL OR n.active <> false
+    OPTIONAL MATCH (n)-[r]->(m)
+    RETURN n, r, m LIMIT 500
+    """
+    try:
+        results = await neo4j_client.execute_read(query)
+    except Exception as exc:
+        logger.error("Graph edges query failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Neo4j query failed")
+
+    edges = []
+    for record in results:
+        if "r" in record and record["r"]:
+            edge = _transform_edge({"r": record["r"]})
+            if edge:
+                edges.append(edge)
+
+    try:
+        await redis_client.set("graph:edges", json.dumps(edges, default=str), ttl=300)
+    except Exception as exc:
+        logger.warning("Failed to cache graph edges: %s", exc)
+
+    return edges
 
 
 @router.get("/graph/region/{region_id}")
@@ -169,7 +208,7 @@ async def get_causal_edges():
             pass
 
     query = """
-    MATCH (e:CausalEdge {active: true})
+    MATCH (e:CausalEdge) WHERE e.active IS NULL OR e.active = true
     RETURN e ORDER BY e.weight DESC
     """
     try:

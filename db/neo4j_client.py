@@ -66,7 +66,7 @@ class Neo4jClient:
     @staticmethod
     async def _run_query(tx: AsyncManagedTransaction, query: str, parameters: dict) -> list:
         result = await tx.run(query, parameters)
-        return [record.data() for record in await result.fetch()]
+        return [record.data() async for record in result]
 
     async def health_check(self) -> dict:
         """Check Neo4j connectivity and return node count."""
