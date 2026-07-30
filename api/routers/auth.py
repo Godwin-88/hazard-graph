@@ -40,7 +40,7 @@ class LoginResponse(BaseModel):
     access_token: str
     refresh_token: str
     role: str
-    user_id: int
+    user_id: str
 
 
 class RefreshRequest(BaseModel):
@@ -106,9 +106,12 @@ async def login(
             detail="Invalid username or password",
         )
 
+    # Convert UUID to string for JWT and response
+    user_id_str = str(user_id)
+
     # Generate tokens
-    access_token = create_access_token(user_id, role)
-    refresh_token = create_refresh_token(user_id)
+    access_token = create_access_token(user_id_str, role)
+    refresh_token = create_refresh_token(user_id_str)
 
     # Log to audit
     try:
@@ -116,7 +119,7 @@ async def login(
         log = AuditLog(
             action="login",
             entity_type="user",
-            entity_id=str(user_id),
+            entity_id=user_id_str,
             details=f"User {username} logged in from {client_ip}",
         )
         db.add(log)
@@ -129,7 +132,7 @@ async def login(
         access_token=access_token,
         refresh_token=refresh_token,
         role=role,
-        user_id=user_id,
+        user_id=user_id_str,
     )
 
 
@@ -167,20 +170,20 @@ async def refresh_token(
     except Exception:
         pass  # Redis down — allow refresh
 
-    user_id = int(payload["sub"])
+    user_id_str = payload["sub"]
 
     # Fetch user role
     try:
         result = await db.execute(
             text("SELECT role FROM users WHERE id = :uid"),
-            {"uid": user_id},
+            {"uid": user_id_str},
         )
         user = result.fetchone()
         role = user[0] if user else "viewer"
     except Exception:
         role = "viewer"
 
-    new_access = create_access_token(user_id, role)
+    new_access = create_access_token(user_id_str, role)
     return RefreshResponse(access_token=new_access)
 
 

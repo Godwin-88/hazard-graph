@@ -42,9 +42,11 @@ class RateLimiter:
             now = datetime.now(timezone.utc).timestamp()
             window_start = now - window_seconds
 
-            from redis import asyncio as aioredis
-            # Use the underlying Redis connection
-            conn = redis_client
+            # Use the underlying raw Redis connection
+            conn = redis_client.raw if hasattr(redis_client, 'raw') else redis_client
+            if conn is None:
+                logger.warning("Redis connection not available — rate limiting disabled")
+                return
 
             # Remove old entries outside window
             await conn.zremrangebyscore(redis_key, 0, window_start)

@@ -88,6 +88,32 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Startup complete — all systems connected")
 
+    # Seed admin user (moved from on_event — lifespan replaces on_event in FastAPI)
+    try:
+        from db.postgres_client import async_session_factory
+        from auth.password_service import hash_password
+        from sqlalchemy import text
+
+        async with async_session_factory() as session:
+            result = await session.execute(text("SELECT COUNT(*) FROM users WHERE username = 'admin'"))
+            count = result.scalar()
+            if count == 0:
+                hashed = hash_password("HazardGraph2026!")
+                await session.execute(
+                    text(
+                        "INSERT INTO users (username, email, hashed_password, name, role, is_active, preferred_language, created_at, updated_at) "
+                        "VALUES ('admin', 'admin@hazardgraph.io', :pwd, 'Admin User', 'admin', true, 'en', NOW(), NOW()) "
+                        "ON CONFLICT (email) DO NOTHING"
+                    ),
+                    {"pwd": hashed},
+                )
+                await session.commit()
+                logger.info("Default admin user created (admin / HazardGraph2026!)")
+            else:
+                logger.debug("Admin user already exists")
+    except Exception as exc:
+        logger.warning("Failed to seed admin user: %s", exc)
+
     yield  # Application runs here
 
     # ── Shutdown ─────────────────────────────────────────

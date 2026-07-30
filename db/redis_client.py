@@ -41,6 +41,15 @@ class RedisClient:
             self._redis = None
             logger.info("Redis connection closed")
 
+    @property
+    def raw(self):
+        """Access the underlying raw Redis connection for advanced operations.
+
+        Use this for sorted sets, pipelines, and other Redis features
+        not exposed by the RedisClient wrapper.
+        """
+        return self._redis
+
     async def get(self, key: str) -> Optional[str]:
         """Get a value by key."""
         if self._redis is None:

@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["forecast"])
 
 
-@router.get("/api/v1/forecast/lstm/{region_id}")
+@router.get("/forecast/lstm/{region_id}")
 async def get_lstm_forecast(
     region_id: str,
     neo4j_session=Depends(get_neo4j_session),
@@ -48,7 +48,7 @@ async def get_lstm_forecast(
     }
 
 
-@router.get("/api/v1/forecast/xgb/{region_id}")
+@router.get("/forecast/xgb/{region_id}")
 async def get_xgb_forecast(
     region_id: str,
     neo4j_session=Depends(get_neo4j_session),
@@ -82,7 +82,7 @@ async def get_xgb_forecast(
     }
 
 
-@router.get("/api/v1/forecast/all/{region_id}")
+@router.get("/forecast/all/{region_id}")
 async def get_all_forecasts(
     region_id: str,
     neo4j_session=Depends(get_neo4j_session),

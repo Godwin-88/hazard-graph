@@ -78,7 +78,7 @@ services:
 
       # CORS — allow Vercel frontend
       - key: CORS_ORIGINS
-        value: https://hazardgraph.vercel.app
+        value: https://hazardgraph-ui.vercel.app
 
       # Africa's Talking SMS
       - key: AT_USERNAME

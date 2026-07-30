@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["lineage"])
 
 
-@router.get("/api/v1/lineage")
+@router.get("/lineage")
 async def lineage():
     """Return all DataSource nodes from the knowledge graph.
 

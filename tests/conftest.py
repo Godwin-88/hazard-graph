@@ -12,7 +12,7 @@ import os
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from neo4j import AsyncGraphDatabase
-import aioredis
+import redis.asyncio as aioredis
 
 # Load test env
 os.environ.setdefault('APP_ENV', 'test')

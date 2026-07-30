@@ -78,4 +78,3 @@ python-louvain==0.16
 
 # GIS
 rasterio==1.3.10
-aioredis==2.0.1

@@ -4,9 +4,9 @@ Returns optimal alert actions from the GNN-PPO policy.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from api.deps import get_current_user, require_officer
+from auth.jwt_service import get_current_user, require_officer
 from db.neo4j_client import get_neo4j_session
-from db.redis_client import get_redis
+from api.deps import get_redis
 import json
 
 router = APIRouter(prefix='/rl', tags=['DRL Policy'])

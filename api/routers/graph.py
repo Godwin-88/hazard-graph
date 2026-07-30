@@ -48,7 +48,7 @@ def _transform_edge(record: dict) -> Optional[dict]:
     }
 
 
-@router.get("/api/v1/graph/nodes")
+@router.get("/graph/nodes")
 async def get_all_nodes():
     """Return all active nodes + edges for graph visualisation.
 
@@ -102,7 +102,7 @@ async def get_all_nodes():
     return response
 
 
-@router.get("/api/v1/graph/region/{region_id}")
+@router.get("/graph/region/{region_id}")
 async def get_region_subgraph(region_id: str):
     """Return subgraph centred on one region (depth 2).
 
@@ -155,7 +155,7 @@ async def get_region_subgraph(region_id: str):
     return response
 
 
-@router.get("/api/v1/graph/causal-edges")
+@router.get("/graph/causal-edges")
 async def get_causal_edges():
     """Return all active CausalEdge nodes.
 
@@ -201,7 +201,7 @@ async def get_causal_edges():
     return edges
 
 
-@router.get("/api/v1/graph/regimes")
+@router.get("/graph/regimes")
 async def get_regimes():
     """Return all regions with their current regime and posterior probs.
 
@@ -254,7 +254,7 @@ async def get_regimes():
     return {"regions": result}
 
 
-@router.get("/api/v1/graph/causal-chain/{region_id}/{hazard_type}")
+@router.get("/graph/causal-chain/{region_id}/{hazard_type}")
 async def get_causal_chain(region_id: str, hazard_type: str):
     """Trace the full causal chain leading to a hazard type in a region.
 

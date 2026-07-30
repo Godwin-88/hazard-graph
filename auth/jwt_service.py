@@ -25,11 +25,11 @@ REFRESH_TOKEN_EXPIRE_DAYS = 7
 security = HTTPBearer(auto_error=False)
 
 
-def create_access_token(user_id: int, role: str) -> str:
+def create_access_token(user_id: Any, role: str) -> str:
     """Create a JWT access token with user info.
 
     Args:
-        user_id: PostgreSQL user ID
+        user_id: PostgreSQL user ID (int or UUID)
         role: User role (admin, officer, viewer)
 
     Returns:
@@ -46,11 +46,11 @@ def create_access_token(user_id: int, role: str) -> str:
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def create_refresh_token(user_id: int) -> str:
+def create_refresh_token(user_id: Any) -> str:
     """Create a JWT refresh token with longer expiry.
 
     Args:
-        user_id: PostgreSQL user ID
+        user_id: PostgreSQL user ID (int or UUID)
 
     Returns:
         Encoded JWT refresh token string

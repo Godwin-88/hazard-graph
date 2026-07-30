@@ -4,9 +4,9 @@ Scenarios API — cascade simulation, cluster detection, temporal graph.
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from api.deps import get_current_user, require_officer
+from auth.jwt_service import get_current_user, require_officer
 from db.neo4j_client import get_neo4j_session
-from db.redis_client import get_redis
+from api.deps import get_redis
 import json
 
 router = APIRouter(prefix='/scenarios', tags=['Scenarios'])

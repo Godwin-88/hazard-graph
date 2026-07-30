@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["health"])
 
 
-@router.get("/api/v1/health")
+@router.get("/health")
 async def health_check():
     """Return comprehensive system health status.
 

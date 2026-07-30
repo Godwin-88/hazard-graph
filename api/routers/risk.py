@@ -31,7 +31,7 @@ bma_engine = BMAEngine()
 sde_engine = RainfallSDE()
 
 
-@router.get("/api/v1/risk/scores")
+@router.get("/risk/scores")
 async def get_risk_scores():
     """Return all risk scores with full BMA + Kelly pipeline.
 
@@ -130,7 +130,7 @@ async def get_risk_scores():
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.get("/api/v1/risk/scores/{region_id}")
+@router.get("/risk/scores/{region_id}")
 async def get_region_risk_score(region_id: str):
     """Return risk score for a specific region (not cached)."""
     try:
@@ -193,7 +193,7 @@ async def get_region_risk_score(region_id: str):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.get("/api/v1/risk/history/{region_id}")
+@router.get("/risk/history/{region_id}")
 async def get_region_history(region_id: str):
     """Return last 12 weeks of risk scores from PostgreSQL."""
     try:
@@ -232,7 +232,7 @@ async def get_region_history(region_id: str):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/api/v1/risk/trigger-scoring")
+@router.post("/risk/trigger-scoring")
 async def trigger_scoring():
     """Manual trigger for the full scoring pipeline.
 
