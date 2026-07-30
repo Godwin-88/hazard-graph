@@ -87,6 +87,7 @@ export function QuantifayaHeader() {
         <NavLink href="/graph" label="Graph Explorer" active={currentPath === '/graph'} />
         <NavLink href="/alerts" label="Alerts" />
         <NavLink href="/analytics" label="Analytics" />
+        <NavLink href="/scenarios" label="Scenarios" active={currentPath === '/scenarios'} />
       </nav>
 
       {/* Right: Clock + Status */}

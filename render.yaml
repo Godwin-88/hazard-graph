@@ -1,0 +1,95 @@
+# HazardGraph — Render Blueprint (Infrastructure as Code)
+# Auto-detected by Render when connected to GitHub repo.
+# Defines two services: Neo4j (private) + FastAPI (web).
+
+services:
+
+  # ── Neo4j Graph Database (Private Service) ──────────
+  - type: pserv
+    name: hazardgraph-neo4j
+    runtime: image
+    plan: free
+    image:
+      url: neo4j:5.21-community
+    disk:
+      name: neo4j-data
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: NEO4J_AUTH
+        value: neo4j/hazardgraph2026
+      - key: NEO4J_PLUGINS
+        value: '["apoc"]'
+      - key: NEO4J_dbms_security_procedures_unrestricted
+        value: apoc.*
+      - key: NEO4J_dbms_memory_heap_initial__size
+        value: 512m
+      - key: NEO4J_dbms_memory_heap_max__size
+        value: 1G
+      - key: NEO4J_dbms_memory_pagecache_size
+        value: 512m
+    healthCheckPath: /
+    autoDeploy: false
+
+  # ── FastAPI Backend (Web Service) ───────────────────
+  - type: web
+    name: hazardgraph-api
+    runtime: docker
+    plan: free
+    repo: https://github.com/Godwin-88/hazard-graph
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerCommand: uvicorn main:app --host 0.0.0.0 --port 8000
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    disk:
+      name: model-store
+      mountPath: /app/models/saved
+      sizeGB: 1
+    envVars:
+      # Neo4j — connects to the private service above
+      - key: NEO4J_URI
+        fromService:
+          type: pserv
+          name: hazardgraph-neo4j
+          property: hostport
+      - key: NEO4J_USERNAME
+        value: neo4j
+      - key: NEO4J_PASSWORD
+        value: hazardgraph2026
+
+      # Supabase (PostgreSQL) — set your connection string
+      - key: POSTGRES_URL
+        sync: false
+
+      # Upstash (Redis) — set your connection string
+      - key: REDIS_URL
+        sync: false
+
+      # Groq LLM — set your API key
+      - key: GROQ_API_KEY
+        sync: false
+
+      # JWT — auto-generated on first deploy
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+
+      # CORS — allow Vercel frontend
+      - key: CORS_ORIGINS
+        value: https://hazardgraph.vercel.app
+
+      # Africa's Talking SMS
+      - key: AT_USERNAME
+        value: sandbox
+      - key: AT_API_KEY
+        sync: false
+      - key: AT_ENV
+        value: sandbox
+      - key: AT_SENDER
+        value: HAZARDGRPH
+
+      # App
+      - key: APP_ENV
+        value: production

@@ -85,3 +85,46 @@ export interface AllForecasts {
   sde: { p_drought: number; p_flood: number } | null
   bma: { score: number } | null
 }
+
+export interface PolicyRecommendation {
+  region_id: string
+  action: number
+  action_label: 'NO_ALERT' | 'LOW_ADVISORY' | 'MEDIUM_SMS' | 'HIGH_ESCALATE'
+  probability: number
+  reasoning: string
+}
+
+export interface PolicyResponse {
+  recommendations: PolicyRecommendation[]
+  policy_version: string
+  model: string
+}
+
+export interface CascadeResult {
+  source_region: string
+  horizon_weeks: number
+  cascade_probabilities: Record<string, number>
+  critical_intervention_node: string
+  expected_affected_population_millions: number
+  simulation_paths: number
+  simulated_at: string
+}
+
+export interface HazardCluster {
+  id: string
+  label: string
+  dominant_hazard: string
+  risk_score: number
+  lat: number
+  lon: number
+  member_count: number
+  member_regions: string[]
+}
+
+export interface TemporalSnapshot {
+  timestamp: string
+  node_count: number
+  edge_count: number
+  avg_risk: number
+  high_risk_regions: number
+}

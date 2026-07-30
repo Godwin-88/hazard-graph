@@ -7,6 +7,7 @@ import { Dashboard } from './pages/Dashboard';
 import GraphExplorer from './pages/GraphExplorer';
 import AlertReview from './pages/AlertReview';
 import Analytics from './pages/Analytics';
+import ScenarioSimulator from './pages/ScenarioSimulator';
 import Login from './pages/Login';
 
 const queryClient = new QueryClient({
@@ -71,6 +72,17 @@ export default function App() {
                 <ProtectedRoute>
                   <Layout>
                     <Analytics />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/scenarios"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <ScenarioSimulator />
                   </Layout>
                 </ProtectedRoute>
               }

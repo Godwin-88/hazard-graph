@@ -356,6 +356,72 @@ def register_jobs() -> None:
         max_instances=1,
     )
 
+    # CNN NDVI inference: weekly Monday 09:50 EAT (06:50 UTC)
+    scheduler.add_job(
+        _run_cnn_ndvi,
+        trigger=CronTrigger(day_of_week="mon", hour=6, minute=50, timezone="UTC"),
+        id="cnn_ndvi",
+        name="CNN NDVI Anomaly Detection",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
+    # TimeGPT ensemble: weekly Monday 10:05 EAT (07:05 UTC)
+    scheduler.add_job(
+        _run_timegpt_ensemble,
+        trigger=CronTrigger(day_of_week="mon", hour=7, minute=5, timezone="UTC"),
+        id="timegpt_ensemble",
+        name="TimeGPT Ensemble Forecast",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
+    # Louvain clusters: monthly 1st Monday 03:00 EAT (00:00 UTC)
+    scheduler.add_job(
+        _run_louvain_clusters,
+        trigger=CronTrigger(day=1, hour=0, minute=0, timezone="UTC"),
+        id="louvain_clusters",
+        name="Louvain Community Detection",
+        replace_existing=True,
+        misfire_grace_time=7200,
+        max_instances=1,
+    )
+
+    # SIR cascade: weekly Monday 10:20 EAT (07:20 UTC)
+    scheduler.add_job(
+        _run_sir_cascade,
+        trigger=CronTrigger(day_of_week="mon", hour=7, minute=20, timezone="UTC"),
+        id="sir_cascade",
+        name="SIR Contagion Cascade",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
+    # PPO policy training: monthly 1st Monday 04:00 EAT (01:00 UTC)
+    scheduler.add_job(
+        _run_ppo_training,
+        trigger=CronTrigger(day=1, hour=1, minute=0, timezone="UTC"),
+        id="ppo_training",
+        name="PPO Alert Policy Training",
+        replace_existing=True,
+        misfire_grace_time=7200,
+        max_instances=1,
+    )
+
+    # Graph snapshot: weekly Sunday 23:00 EAT (20:00 UTC)
+    scheduler.add_job(
+        _run_graph_snapshot,
+        trigger=CronTrigger(day_of_week="sun", hour=20, minute=0, timezone="UTC"),
+        id="graph_snapshot",
+        name="Weekly Graph Snapshot",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
     logger.info("Registered %d scheduled jobs", len(scheduler.get_jobs()))
 
 
@@ -437,6 +503,171 @@ async def _run_pagerank_update() -> None:
         logger.info("PageRank update complete: %d regions", len(results))
     except Exception as exc:
         logger.error("PageRank update failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
+async def _run_cnn_ndvi() -> None:
+    """Weekly CNN NDVI anomaly detection for all regions."""
+    job_name = "cnn_ndvi"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from db.neo4j_client import neo4j_client
+        from models.ml.ndvi_cnn import NDVIAnomalyDetector
+
+        detector = NDVIAnomalyDetector()
+        async with neo4j_client.session() as session:
+            results = await detector.run_all_regions(session)
+
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=len(results),
+        )
+        logger.info("CNN NDVI complete: %d regions", len(results))
+    except Exception as exc:
+        logger.error("CNN NDVI failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
+async def _run_timegpt_ensemble() -> None:
+    """Weekly TimeGPT ensemble forecast for all regions."""
+    job_name = "timegpt_ensemble"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from db.neo4j_client import neo4j_client
+        from models.ml.timeseries_ensemble import TimeSeriesEnsemble
+        from models.ml.feature_pipeline import FeaturePipeline
+
+        assembler = FeaturePipeline()
+        ensemble = TimeSeriesEnsemble()
+        async with neo4j_client.session() as session:
+            results = await ensemble.run_all_regions(assembler, session)
+
+        total = sum(len(v) for v in results.values())
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=total,
+        )
+        logger.info("TimeGPT ensemble complete: %d forecasts", total)
+    except Exception as exc:
+        logger.error("TimeGPT ensemble failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
+async def _run_louvain_clusters() -> None:
+    """Monthly Louvain community detection."""
+    job_name = "louvain_clusters"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from db.neo4j_client import neo4j_client
+        from risk.scoring_service import get_latest_risk_scores
+        from models.network.community_detection import LouvainHazardClustering
+        from config.settings import settings
+        from groq import AsyncGroq
+
+        async with neo4j_client.session() as session:
+            risk_scores = await get_latest_risk_scores(session)
+            risk_dict = {r.id: r.score for r in risk_scores}
+            regimes = {r.id: r.current_regime for r in risk_scores}
+            spi_values = {r.id: 0.0 for r in risk_scores}
+
+            result = await neo4j_client.execute_read(
+                'MATCH (e:CausalEdge {active: true}) '
+                'RETURN e.region_id as r, e.source_variable as s, '
+                '       e.target_variable as t, e.weight as w'
+            )
+            causal_density = {}
+            for rec in result:
+                causal_density[(rec['r'], rec['t'])] = float(rec['w'])
+
+            groq_client = AsyncGroq(api_key=settings.groq_api_key)
+            clustering = LouvainHazardClustering()
+            clusters = await clustering.run(
+                risk_dict, regimes, spi_values,
+                causal_density, session, groq_client
+            )
+
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=len(clusters),
+        )
+        logger.info("Louvain clusters complete: %d clusters", len(clusters))
+    except Exception as exc:
+        logger.error("Louvain clusters failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
+async def _run_sir_cascade() -> None:
+    """Weekly SIR cascade for top-3 risk regions."""
+    job_name = "sir_cascade"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from db.neo4j_client import neo4j_client
+        from risk.scoring_service import get_latest_risk_scores
+        from risk.vulnerability_data import get_all_vulnerability_multipliers
+        from models.network.contagion_cascade import SIRCascadeSimulator
+
+        async with neo4j_client.session() as session:
+            risk_scores = await get_latest_risk_scores(session)
+            risk_dict = {r.id: r.score for r in risk_scores}
+            vuln = get_all_vulnerability_multipliers()
+
+            sim = SIRCascadeSimulator()
+            results = await sim.run_top3(risk_dict, vuln, session)
+
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=len(results),
+        )
+        logger.info("SIR cascade complete: %d simulations", len(results))
+    except Exception as exc:
+        logger.error("SIR cascade failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
+async def _run_ppo_training() -> None:
+    """Monthly PPO policy retraining on accumulated snapshot history."""
+    job_name = "ppo_training"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from models.rl.ppo_trainer import PPOTrainer
+
+        trainer = PPOTrainer()
+        trainer.train(n_iterations=100, verbose=False)
+
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=1,
+        )
+        logger.info("PPO training complete")
+    except Exception as exc:
+        logger.error("PPO training failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
+async def _run_graph_snapshot() -> None:
+    """Weekly graph snapshot for temporal DRL training."""
+    job_name = "graph_snapshot"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from db.neo4j_client import neo4j_client
+        from graph.temporal_snapshots import save_weekly_snapshot
+
+        async with neo4j_client.session() as session:
+            snapshot_id = await save_weekly_snapshot(session)
+
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=1,
+        )
+        logger.info("Graph snapshot complete: %s", snapshot_id)
+    except Exception as exc:
+        logger.error("Graph snapshot failed: %s", exc)
         await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
 
 

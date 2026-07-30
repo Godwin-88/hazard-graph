@@ -1,0 +1,147 @@
+# HazardGraph — CI/CD Pipeline
+# Runs tests on every push/PR, deploys to Vercel + Render on main.
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  # Test database connections (GitHub-hosted services)
+  NEO4J_URI: bolt://localhost:7687
+  NEO4J_USERNAME: neo4j
+  NEO4J_PASSWORD: testpassword
+  POSTGRES_URL: postgresql+asyncpg://hazardgraph_test:testpassword@localhost:5432/hazardgraph_test
+  REDIS_URL: redis://localhost:6379
+
+jobs:
+
+  # ── Backend Tests ──────────────────────────────────
+  test-backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    services:
+      neo4j:
+        image: neo4j:5.21-community
+        env:
+          NEO4J_AUTH: neo4j/testpassword
+          NEO4J_PLUGINS: '["apoc"]'
+          NEO4J_dbms_security_procedures_unrestricted: apoc.*
+        ports:
+          - 7687:7687
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p testpassword 'RETURN 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: hazardgraph_test
+          POSTGRES_USER: hazardgraph_test
+          POSTGRES_PASSWORD: testpassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hazardgraph_test -d hazardgraph_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run model tests
+        run: pytest tests/test_models.py -v --timeout=120
+
+      - name: Run RL tests
+        run: pytest tests/test_rl.py -v --timeout=120
+
+      - name: Run all tests
+        run: pytest tests/ -v --timeout=120
+
+  # ── Frontend Build ─────────────────────────────────
+  test-frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hazardgraph-ui
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: hazardgraph-ui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+  # ── Deploy Frontend to Vercel ──────────────────────
+  deploy-frontend:
+    name: Deploy Frontend (Vercel)
+    needs: [test-backend, test-frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hazardgraph-ui
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: ./hazardgraph-ui
+
+  # ── Deploy Backend to Render ───────────────────────
+  deploy-backend:
+    name: Deploy Backend (Render)
+    needs: [test-backend, test-frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trigger Render Deploy
+        uses: johnbeynon/render-deploy-action@v0.0.8
+        with:
+          service-id: ${{ secrets.RENDER_API_SERVICE_ID }}
+          api-key: ${{ secrets.RENDER_API_KEY }}

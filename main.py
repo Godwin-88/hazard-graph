@@ -144,6 +144,8 @@ from api.routers.forecast import router as forecast_router
 from api.routers.auth import router as auth_router
 from api.routers.alerts import router as alerts_router
 from api.routers.webhooks import router as webhooks_router
+from api.routers.rl_policy import router as rl_policy_router
+from api.routers.scenarios import router as scenarios_router
 
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(lineage_router, prefix="/api/v1")
@@ -154,6 +156,9 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(alerts_router, prefix="/api/v1")
 # Webhooks registered WITHOUT auth middleware — AT posts here directly
 app.include_router(webhooks_router, prefix="/api/v1")
+# DRL Policy + Scenarios routers
+app.include_router(rl_policy_router, prefix="/api/v1")
+app.include_router(scenarios_router, prefix="/api/v1")
 
 
 # ── Seed admin user on startup ─────────────────────────────
