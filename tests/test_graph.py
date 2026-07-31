@@ -88,6 +88,11 @@ class TestGraphSchema:
                 'MATCH (r:Region {name: "Kenya"})-[rel:IN_REGIME]->() '
                 'DELETE rel'
             )
+            # Ensure HazardRegime node exists
+            await session.run(
+                'MERGE (h:HazardRegime {name: "DroughtOnset"}) '
+                'SET h.description = "Drought onset regime"'
+            )
             # Set a regime on Kenya
             await session.run(
                 'MATCH (r:Region {name: "Kenya"}) '

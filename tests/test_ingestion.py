@@ -15,20 +15,19 @@ class TestICPACIngestion:
         not a class-based fetcher. We mock the internals (feedparser, groq)
         and call the module function directly.
         """
-        mock_rss_response = {
-            'entries': [{
-                'title': 'Drought alert for Horn of Africa',
-                'published': '2026-07-20',
-                'summary': 'Severe drought conditions expected in Kenya',
-                'link': 'https://icpac.net/test'
-            }]
-        }
+        mock_rss_response = [{
+            'title': 'Drought alert for Horn of Africa',
+            'published': '2026-07-20',
+            'summary': 'Severe drought conditions expected in Kenya',
+            'link': 'https://icpac.net/test'
+        }]
         mock_groq_response = MagicMock()
         mock_groq_response.choices[0].message.content = (
             '{"region":"Kenya","hazard_type":"drought",'
             '"severity":0.8,"forecast_horizon_days":30,"confidence_pct":0.75}'
         )
-        with patch('feedparser.parse', return_value=mock_rss_response), \
+        with patch('ingestion.icpac_rss_fetcher.fetch_rss_feed',
+                   return_value=mock_rss_response), \
              patch('groq.AsyncGroq') as mock_groq:
             mock_groq.return_value.chat.completions.create = \
                 AsyncMock(return_value=mock_groq_response)

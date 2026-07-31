@@ -80,7 +80,7 @@ class TestAdvisoryGeneration:
                 "ON CONFLICT (id) DO NOTHING"
             ),
             {
-                "id": 9999,
+                "id": "00000000-0000-0000-0000-000000009999",
                 "rid": "kenya",
                 "lang": "swahili",
                 "msg": "Test advisory",
@@ -97,7 +97,7 @@ class TestAdvisoryGeneration:
                 "ON CONFLICT DO NOTHING"
             ),
             {
-                "alert_id": 9999,
+                "alert_id": "00000000-0000-0000-0000-000000009999",
                 "phone": "+254700000099",
                 "msg_id": "test-msg-id",
                 "status": "Success",
@@ -117,7 +117,7 @@ class TestAdvisoryGeneration:
         from models.postgres.alerts import AlertResponse
         result = await postgres_session.execute(
             select(AlertResponse).where(
-                AlertResponse.alert_id == 9999,
+                AlertResponse.alert_id == "00000000-0000-0000-0000-000000009999",
                 AlertResponse.response == 'Y'
             )
         )

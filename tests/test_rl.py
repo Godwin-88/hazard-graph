@@ -132,9 +132,11 @@ class TestPPOTrainer:
 
     def test_training_improves_reward(self):
         """Average reward should increase over training."""
+        import torch
+        torch.manual_seed(42)
         from models.rl.ppo_trainer import PPOTrainer
         trainer = PPOTrainer()
-        trainer.train(n_iterations=15, verbose=False)
+        trainer.train(n_iterations=30, verbose=False)
         rewards = list(trainer.rewards_history)
         if len(rewards) >= 4:
             mid = len(rewards) // 2

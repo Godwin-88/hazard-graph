@@ -27,19 +27,18 @@ os.environ['POSTGRES_DSN'] = os.getenv(
 os.environ['REDIS_URL'] = os.getenv('REDIS_URL', 'redis://localhost:6380')
 
 
-@pytest.fixture(scope='session')
-def event_loop():
-    """Single event loop for the entire test session."""
-    policy = asyncio.get_event_loop_policy()
-    loop = policy.new_event_loop()
-    asyncio.set_event_loop(loop)
-    yield loop
-    loop.close()
-
-
-@pytest_asyncio.fixture(scope='session')
+@pytest_asyncio.fixture(scope='session', loop_scope='session')
 async def neo4j_driver():
-    """Connect to test Neo4j container."""
+    """Connect to test Neo4j container.
+
+    Also connects the global neo4j_client singleton so that functions
+    using it directly (e.g., write_causal_edges, compute_risk_scores,
+    ingest_icpac_rss) work correctly with the test container.
+    """
+    # Connect the global neo4j_client singleton to the test container
+    from db.neo4j_client import neo4j_client
+    await neo4j_client.connect()
+
     driver = AsyncGraphDatabase.driver(
         os.getenv('NEO4J_URI', 'bolt://localhost:7688'),
         auth=(os.getenv('NEO4J_USERNAME', 'neo4j'),
@@ -63,7 +62,7 @@ async def neo4j_driver():
     await driver.close()
 
 
-@pytest_asyncio.fixture(scope='session')
+@pytest_asyncio.fixture(scope='session', loop_scope='session')
 async def postgres_session(neo4j_driver):
     """Create all tables and return session factory."""
     engine = create_async_engine(
@@ -82,7 +81,7 @@ async def postgres_session(neo4j_driver):
     await engine.dispose()
 
 
-@pytest_asyncio.fixture(scope='session')
+@pytest_asyncio.fixture(scope='session', loop_scope='session')
 async def redis_client():
     """Connect to test Redis container."""
     client = await aioredis.from_url(
@@ -95,7 +94,7 @@ async def redis_client():
     await client.close()
 
 
-@pytest_asyncio.fixture(scope='session')
+@pytest_asyncio.fixture(scope='session', loop_scope='session')
 async def api_client(neo4j_driver, postgres_session, redis_client):
     """FastAPI test client with overridden DB dependencies.
 
@@ -169,6 +168,7 @@ async def auth_headers(api_client):
                     username='admin',
                     email='admin@hazardgraph.io',
                     hashed_password=hash_password('HazardGraph2026!'),
+                    name='Admin User',
                     role='admin',
                     is_active=True
                 ))
