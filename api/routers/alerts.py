@@ -86,6 +86,21 @@ class UptakeAnalyticsOut(BaseModel):
 # ── Routes ─────────────────────────────────────────────────
 
 
+@router.get("", response_model=list[AlertOut], include_in_schema=False)
+async def list_alerts_no_slash(
+    db: DbSession,
+    user=Depends(get_current_user),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    region_id: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    """Alias for list_alerts without trailing slash — prevents 307 redirect which drops auth headers."""
+    return await list_alerts(
+        db, user, status_filter, region_id, page, page_size
+    )
+
+
 @router.get("/", response_model=list[AlertOut])
 async def list_alerts(
     db: DbSession,

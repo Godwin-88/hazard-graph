@@ -61,7 +61,7 @@ export function ScoreBreakdownModal({ region, history, onClose }: ScoreBreakdown
     setForecastLoading(true)
     try {
       const res = await fetch(`/api/v1/forecast/all/${region.id}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('access_token') || ''}` },
+        headers: { Authorization: `Bearer ${sessionStorage.getItem('access_token') || ''}` },
       })
       if (res.ok) {
         const data: AllForecasts = await res.json()

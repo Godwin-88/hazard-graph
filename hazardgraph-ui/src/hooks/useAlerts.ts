@@ -15,14 +15,19 @@ async function fetchAlerts(status?: string) {
   return res.json();
 }
 
-async function approveAlert(id: number, messageText: string) {
+function getAuthHeaders(): Record<string, string> {
   const token = sessionStorage.getItem('access_token');
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+async function approveAlert(id: number, messageText: string) {
   const res = await fetch(`${API_BASE}/alerts/${id}`, {
     method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ action: 'approve', message_text: messageText }),
   });
   if (!res.ok) throw new Error('Failed to approve alert');
@@ -30,13 +35,9 @@ async function approveAlert(id: number, messageText: string) {
 }
 
 async function rejectAlert(id: number, reason: string) {
-  const token = sessionStorage.getItem('access_token');
   const res = await fetch(`${API_BASE}/alerts/${id}`, {
     method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ action: 'reject', reason }),
   });
   if (!res.ok) throw new Error('Failed to reject alert');
@@ -44,10 +45,9 @@ async function rejectAlert(id: number, reason: string) {
 }
 
 async function dispatchAlert(id: number) {
-  const token = sessionStorage.getItem('access_token');
   const res = await fetch(`${API_BASE}/alerts/${id}/dispatch`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
+    headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error('Failed to dispatch alert');
   return res.json();

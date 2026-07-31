@@ -37,8 +37,19 @@ interface AnalyticsData {
   language_performance: LanguagePerf[]
 }
 
+function getAuthHeaders(): Record<string, string> {
+  const token = sessionStorage.getItem('access_token');
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 async function fetchAnalytics(): Promise<AnalyticsData> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/alerts/analytics/uptake`)
+  const res = await fetch(`${API_BASE_URL}/api/v1/alerts/analytics/uptake`, {
+    headers: getAuthHeaders(),
+  })
   if (!res.ok) {
     // Return demo data if endpoint not available
     return getDemoAnalytics()

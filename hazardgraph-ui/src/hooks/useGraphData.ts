@@ -17,14 +17,23 @@ export interface GraphEdge {
   [key: string]: unknown;
 }
 
+function getAuthHeaders(): Record<string, string> {
+  const token = sessionStorage.getItem('access_token');
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 async function fetchGraphNodes() {
-  const res = await fetch(`${API_BASE}/graph/nodes`);
+  const res = await fetch(`${API_BASE}/graph/nodes`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch graph nodes');
   return res.json();
 }
 
 async function fetchGraphEdges() {
-  const res = await fetch(`${API_BASE}/graph/edges`);
+  const res = await fetch(`${API_BASE}/graph/edges`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch graph edges');
   return res.json();
 }
