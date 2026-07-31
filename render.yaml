@@ -1,35 +1,20 @@
 # HazardGraph — Render Blueprint (Infrastructure as Code)
 # Auto-detected by Render when connected to GitHub repo.
-# Defines two services: Neo4j (private) + FastAPI (web).
+#
+# Architecture:
+#   - FastAPI backend (Docker) — runs on Render Web Service
+#   - Neo4j Aura Free (managed) — set NEO4J_URI in dashboard
+#   - Supabase (PostgreSQL) — set POSTGRES_DSN in dashboard
+#   - Upstash (Redis) — set REDIS_URL in dashboard
+#
+# Why Docker instead of Render's Python runtime?
+#   main.py is at the repo root and imports from config/, db/, graph/,
+#   auth/, models/, ingestion/, causal/, risk/, alerts/, pipeline/,
+#   regime/, scheduler/ — all at the repo root. Using rootDir: api
+#   would break every import. Docker copies the entire repo and works
+#   correctly with the monorepo structure.
 
 services:
-
-  # ── Neo4j Graph Database (Private Service) ──────────
-  - type: pserv
-    name: hazardgraph-neo4j
-    runtime: image
-    plan: free
-    image:
-      url: neo4j:5.21-community
-    disk:
-      name: neo4j-data
-      mountPath: /data
-      sizeGB: 10
-    envVars:
-      - key: NEO4J_AUTH
-        value: neo4j/hazardgraph2026
-      - key: NEO4J_PLUGINS
-        value: '["apoc"]'
-      - key: NEO4J_dbms_security_procedures_unrestricted
-        value: apoc.*
-      - key: NEO4J_dbms_memory_heap_initial__size
-        value: 512m
-      - key: NEO4J_dbms_memory_heap_max__size
-        value: 1G
-      - key: NEO4J_dbms_memory_pagecache_size
-        value: 512m
-    healthCheckPath: /
-    autoDeploy: false
 
   # ── FastAPI Backend (Web Service) ───────────────────
   - type: web
@@ -47,40 +32,37 @@ services:
       mountPath: /app/models/saved
       sizeGB: 1
     envVars:
-      # Neo4j — connects to the private service above
+      # ── Neo4j (Aura Free) — set your bolt:// URI in dashboard ──
       - key: NEO4J_URI
-        fromService:
-          type: pserv
-          name: hazardgraph-neo4j
-          property: hostport
-      - key: NEO4J_USERNAME
+        sync: false
+      - key: NEO4J_USER
         value: neo4j
       - key: NEO4J_PASSWORD
-        value: hazardgraph2026
-
-      # Supabase (PostgreSQL) — set your connection string
-      - key: POSTGRES_URL
         sync: false
 
-      # Upstash (Redis) — set your connection string
+      # ── Supabase (PostgreSQL) — set your asyncpg DSN in dashboard ──
+      - key: POSTGRES_DSN
+        sync: false
+
+      # ── Upstash (Redis) — set your redis:// URL in dashboard ──
       - key: REDIS_URL
         sync: false
 
-      # Groq LLM — set your API key
+      # ── Groq LLM (advisory generation) ──
       - key: GROQ_API_KEY
         sync: false
 
-      # JWT — auto-generated on first deploy
+      # ── JWT Authentication ──
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: JWT_ALGORITHM
         value: HS256
 
-      # CORS — allow Vercel frontend
+      # ── CORS — allow Vercel frontend ──
       - key: CORS_ORIGINS
         value: https://hazardgraph-ui.vercel.app
 
-      # Africa's Talking SMS
+      # ── Africa's Talking SMS ──
       - key: AT_USERNAME
         value: sandbox
       - key: AT_API_KEY
@@ -90,6 +72,20 @@ services:
       - key: AT_SENDER
         value: HAZARDGRPH
 
-      # App
+      # ── FEWS NET (IPC data fallback) ──
+      - key: FEWS_NET_USERNAME
+        sync: false
+      - key: FEWS_NET_PASSWORD
+        sync: false
+      - key: FEWS_NET_BASE_URL
+        value: https://fdw.fews.net/api
+
+      # ── WFP DataBridges (market prices) ──
+      - key: WFP_CLIENT_ID
+        sync: false
+      - key: WFP_CLIENT_SECRET
+        sync: false
+
+      # ── App ──
       - key: APP_ENV
         value: production
