@@ -27,10 +27,6 @@ services:
     dockerCommand: uvicorn main:app --host 0.0.0.0 --port 8000
     healthCheckPath: /api/v1/health
     autoDeploy: true
-    disk:
-      name: model-store
-      mountPath: /app/models/saved
-      sizeGB: 1
     envVars:
       # ── Neo4j (Aura Free) — set your bolt:// URI in dashboard ──
       - key: NEO4J_URI
