@@ -83,7 +83,7 @@ async def seed_neo4j(neo4j_session):
          'risk': 62.4, 'ipc': 3, 'food_pct': 0.30},
     ]
 
-    now = datetime.datetime.utcnow().isoformat()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
     for sig in demo_signals:
         rid = sig['region']
