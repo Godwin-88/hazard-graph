@@ -14,8 +14,14 @@ from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+# Ensure the DSN uses the asyncpg dialect; if the user supplied a plain
+# postgresql:// URL, convert it to postgresql+asyncpg:// automatically.
+dsn = settings.postgres_dsn
+if dsn and "+" not in dsn.split("://")[0]:
+    dsn = dsn.replace("postgresql://", "postgresql+asyncpg://", 1)
+
 engine = create_async_engine(
-    settings.postgres_dsn,
+    dsn,
     echo=False,
     pool_size=10,
     max_overflow=20,
