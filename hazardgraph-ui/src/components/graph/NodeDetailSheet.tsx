@@ -1,6 +1,6 @@
 interface GraphNode {
   id: string;
-  name: string;
+  label: string;
   type: string;
   [key: string]: unknown;
 }
@@ -13,14 +13,14 @@ interface NodeDetailSheetProps {
 export function NodeDetailSheet({ node, onClose }: NodeDetailSheetProps) {
   if (!node) return null;
 
-  const excludedKeys = ['id', 'name', 'type'];
+  const excludedKeys = ['id', 'label', 'type'];
 
   return (
     <div className="fixed inset-y-0 right-0 z-40 w-96 border-l border-gray-800 bg-[#111827] shadow-2xl transform transition-transform">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
         <div>
-          <h3 className="font-semibold text-white">{node.name || node.id}</h3>
+          <h3 className="font-semibold text-white">{node.label || node.id}</h3>
           <span className="text-xs text-gray-400">{node.type}</span>
         </div>
         <button

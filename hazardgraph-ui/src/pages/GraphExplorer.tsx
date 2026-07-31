@@ -11,8 +11,10 @@ export default function GraphExplorer() {
   const [activeTab, setActiveTab] = useState<Tab>('full-graph');
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
 
-  const { data: nodes, isLoading: nodesLoading, error: nodesError } = useGraphNodes();
+  const { data: nodesData, isLoading: nodesLoading, error: nodesError } = useGraphNodes();
   const { data: edges, isLoading: edgesLoading, error: edgesError } = useGraphEdges();
+
+  const nodes = nodesData?.nodes ?? [];
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'full-graph', label: 'Full Graph' },
@@ -30,9 +32,9 @@ export default function GraphExplorer() {
           <h1 className="font-['Raleway'] text-xl font-bold text-white">
             Graph Explorer
           </h1>
-          {nodes && edges && (
+          {nodes.length > 0 && edges && (
             <span className="text-sm text-gray-500">
-              {Array.isArray(nodes) ? nodes.length : 0} nodes · {Array.isArray(edges) ? edges.length : 0} edges
+              {nodes.length} nodes · {Array.isArray(edges) ? edges.length : 0} edges
             </span>
           )}
         </div>
@@ -74,9 +76,9 @@ export default function GraphExplorer() {
           </div>
         )}
 
-        {!isLoading && !nodesError && activeTab === 'full-graph' && nodes && edges && (
+        {!isLoading && !nodesError && activeTab === 'full-graph' && nodes.length > 0 && edges && (
           <ForceGraph
-            nodes={Array.isArray(nodes) ? nodes as GraphNode[] : []}
+            nodes={nodes as GraphNode[]}
             edges={Array.isArray(edges) ? edges : []}
             onNodeClick={(node) => setSelectedNode(node)}
           />

@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 
 interface GraphNode {
   id: string;
-  name: string;
+  label: string;
   type: string;
   [key: string]: unknown;
 }
@@ -61,7 +61,7 @@ export function ForceGraph({ nodes, edges, onNodeClick }: ForceGraphProps) {
   const graphData = {
     nodes: visibleNodes.map((n) => ({
       id: n.id,
-      name: n.name,
+      label: n.label,
       type: n.type,
       val: NODE_SIZES[n.type] || 6,
     })),
@@ -136,7 +136,7 @@ export function ForceGraph({ nodes, edges, onNodeClick }: ForceGraphProps) {
       ctx.fillStyle = '#9CA3AF';
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(node.name, node.x, node.y + size + 12);
+      ctx.fillText(node.label, node.x, node.y + size + 12);
     });
   }, [graphData, graphReady]);
 
@@ -219,7 +219,7 @@ function ForceGraph2DWrapper({
   graphData,
   onNodeClick,
 }: {
-  graphData: { nodes: { id: string; name: string; type: string; val: number }[]; links: { source: string; target: string; type: string; weight: number }[] };
+  graphData: { nodes: { id: string; label: string; type: string; val: number }[]; links: { source: string; target: string; type: string; weight: number }[] };
   onNodeClick: (node: { id: string }) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -285,7 +285,7 @@ function ForceGraph2DWrapper({
       ctx.fillStyle = '#9CA3AF';
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(node.name, node.x, node.y + size + 12);
+      ctx.fillText(node.label, node.x, node.y + size + 12);
     });
 
     // Click handler

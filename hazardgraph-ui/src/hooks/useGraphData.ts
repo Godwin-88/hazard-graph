@@ -4,7 +4,7 @@ const API_BASE = '/api/v1';
 
 export interface GraphNode {
   id: string;
-  name: string;
+  label: string;
   type: string;
   [key: string]: unknown;
 }

@@ -16,7 +16,8 @@ import type {
 const BASE_URL = ''
 
 function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem('access_token')
+  // BUGFIX: AuthContext stores token in sessionStorage, not localStorage
+  const token = sessionStorage.getItem('access_token')
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
@@ -64,7 +65,7 @@ export async function fetchRegimes(): Promise<{ regions: RegimeInfo[] }> {
 export async function triggerScoring(): Promise<RiskScoresResponse> {
   const res = await fetch(`${BASE_URL}/api/v1/risk/trigger-scoring`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
   })
   if (!res.ok) {
     throw new Error(`Trigger failed: ${res.status}`)

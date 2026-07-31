@@ -6,6 +6,12 @@ interface AlertQueueItemProps {
   onClick: () => void;
 }
 
+function getConfidenceLabel(confidence: number): string {
+  if (confidence >= 0.7) return 'High'
+  if (confidence >= 0.4) return 'Medium'
+  return 'Low'
+}
+
 function getConfidenceColor(confidence: string): string {
   switch (confidence) {
     case 'High': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
@@ -58,9 +64,9 @@ export function AlertQueueItem({ alert, onClick }: AlertQueueItemProps) {
             {alert.current_regime && (
               <RegimeBadge regime={alert.current_regime} />
             )}
-            {alert.confidence && (
-              <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${getConfidenceColor(alert.confidence as string)}`}>
-                {alert.confidence}
+            {alert.confidence != null && (
+              <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${getConfidenceColor(getConfidenceLabel(alert.confidence))}`}>
+                {getConfidenceLabel(alert.confidence)}
               </span>
             )}
           </div>

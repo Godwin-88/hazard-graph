@@ -210,16 +210,19 @@ export function ForecastChart({ data, regionName }: ForecastChartProps) {
             <p className="text-white font-medium">{bma.score.toFixed(1)}</p>
           </div>
         )}
-        {lstm && (
+        {lstm && (() => {
+          const lstmData = lstm as { predicted_phase: number; confidence: number; model_agreement?: number }
+          return (
           <div className="rounded bg-surface-elevated p-2">
             <span className="text-text-muted">Model Agreement</span>
             <p className="text-white font-medium">
-              {(lstm as { model_agreement?: number }).model_agreement !== undefined
-                ? ((lstm as { model_agreement?: number }).model_agreement * 100).toFixed(0) + '%'
+              {lstmData.model_agreement !== undefined
+                ? (lstmData.model_agreement * 100).toFixed(0) + '%'
                 : 'N/A'}
             </p>
           </div>
-        )}
+          )
+        })()}
       </div>
     </div>
   )

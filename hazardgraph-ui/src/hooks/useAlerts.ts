@@ -5,9 +5,12 @@ const API_BASE = '/api/v1';
 async function fetchAlerts(status?: string) {
   const token = sessionStorage.getItem('access_token');
   const params = status ? `?status=${status}` : '';
-  const res = await fetch(`${API_BASE}/alerts${params}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  // Use trailing slash to prevent FastAPI 307 redirect which drops auth headers
+  const res = await fetch(`${API_BASE}/alerts/${params}`, { headers });
   if (!res.ok) throw new Error('Failed to fetch alerts');
   return res.json();
 }
