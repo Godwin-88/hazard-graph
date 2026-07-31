@@ -134,7 +134,7 @@ class RainfallSDE:
 
             spi_query = """
             MATCH (r:Region {id: $region_id})
-            MATCH (r)-[:HAS_SIGNAL]->(s:RainfallSignal)
+            MATCH (s:RainfallSignal)-[:MEASURED_IN]->(r)
             RETURN s.spi_30d_smoothed AS spi
             ORDER BY s.created_at DESC
             LIMIT 1

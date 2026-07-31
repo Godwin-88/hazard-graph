@@ -14,8 +14,27 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from neo4j import AsyncGraphDatabase
 import redis.asyncio as aioredis
 
-# Load test env
+# Set test environment variables BEFORE any imports that load settings
+# This ensures the global singletons connect to test containers
 os.environ.setdefault('APP_ENV', 'test')
+os.environ['NEO4J_URI'] = os.getenv('NEO4J_URI', 'bolt://localhost:7688')
+os.environ['NEO4J_USER'] = os.getenv('NEO4J_USER', 'neo4j')
+os.environ['NEO4J_PASSWORD'] = os.getenv('NEO4J_PASSWORD', 'testpassword')
+os.environ['POSTGRES_DSN'] = os.getenv(
+    'POSTGRES_URL',
+    'postgresql+asyncpg://hazardgraph_test:testpassword@localhost:5433/hazardgraph_test'
+)
+os.environ['REDIS_URL'] = os.getenv('REDIS_URL', 'redis://localhost:6380')
+
+
+@pytest.fixture(scope='session')
+def event_loop():
+    """Single event loop for the entire test session."""
+    policy = asyncio.get_event_loop_policy()
+    loop = policy.new_event_loop()
+    asyncio.set_event_loop(loop)
+    yield loop
+    loop.close()
 
 
 @pytest_asyncio.fixture(scope='session')
@@ -78,11 +97,24 @@ async def redis_client():
 
 @pytest_asyncio.fixture(scope='session')
 async def api_client(neo4j_driver, postgres_session, redis_client):
-    """FastAPI test client with overridden DB dependencies."""
+    """FastAPI test client with overridden DB dependencies.
+
+    Also connects the global singletons (neo4j_client, redis_client)
+    to the test containers so that functions using them directly
+    (e.g., health check, write_causal_edges, ingest_icpac_rss)
+    work correctly.
+    """
     from main import app
-    from db.neo4j_client import get_neo4j_session
+    from db.neo4j_client import get_neo4j_session, neo4j_client
     from db.postgres_client import get_db
-    from db.redis_client import get_redis
+    from db.redis_client import get_redis, redis_client as global_redis
+
+    # Connect global singletons to test containers
+    # (they use settings which now point to test containers via env vars)
+    from config.settings import settings
+    # Force reconnect by setting environment and re-importing
+    await neo4j_client.connect()
+    await global_redis.connect()
 
     # Override dependencies to use test containers
     async def override_neo4j():
@@ -104,21 +136,31 @@ async def api_client(neo4j_driver, postgres_session, redis_client):
         yield client
 
     app.dependency_overrides.clear()
+    await neo4j_client.close()
+    await global_redis.close()
 
 
 @pytest_asyncio.fixture
-async def auth_headers(api_client, postgres_session):
-    """Get JWT token for test admin user."""
+async def auth_headers(api_client):
+    """Get JWT token for test admin user.
+
+    Uses a separate database session to avoid conflicts with
+    the shared postgres_session fixture used by get_db dependency.
+    """
+    # First try logging in
     response = await api_client.post('/api/v1/auth/login', json={
         'username': 'admin',
         'password': 'HazardGraph2026!'
     })
+
     if response.status_code != 200:
-        # Try to create the user first
+        # Create the admin user using a fresh session
+        from db.postgres_client import async_session_factory
         from auth.password_service import hash_password
         from models.postgres.users import User
         from sqlalchemy import select
-        async with postgres_session as session:
+
+        async with async_session_factory() as session:
             result = await session.execute(
                 select(User).where(User.username == 'admin')
             )
@@ -131,10 +173,12 @@ async def auth_headers(api_client, postgres_session):
                     is_active=True
                 ))
                 await session.commit()
+
         response = await api_client.post('/api/v1/auth/login', json={
             'username': 'admin',
             'password': 'HazardGraph2026!'
         })
+
     token = response.json()['access_token']
     return {'Authorization': f'Bearer {token}'}
 

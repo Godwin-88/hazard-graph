@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     fews_net_password: str = ""
     fews_net_base_url: str = "https://fdw.fews.net/api"
 
+    # WFP DataBridges
+    wfp_client_id: str = ""
+    wfp_client_secret: str = ""
+
     # JWT
     jwt_secret_key: str = "change-this-to-a-32-char-minimum-secret"
     jwt_algorithm: str = "HS256"

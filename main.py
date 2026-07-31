@@ -173,48 +173,18 @@ from api.routers.webhooks import router as webhooks_router
 from api.routers.rl_policy import router as rl_policy_router
 from api.routers.scenarios import router as scenarios_router
 
-app.include_router(health_router, prefix="/api/v1")
-app.include_router(lineage_router, prefix="/api/v1")
-app.include_router(graph_router, prefix="/api/v1")
-app.include_router(risk_router, prefix="/api/v1")
-app.include_router(forecast_router, prefix="/api/v1")
-app.include_router(auth_router, prefix="/api/v1")
-app.include_router(alerts_router, prefix="/api/v1")
+app.include_router(health_router)
+app.include_router(lineage_router)
+app.include_router(graph_router)
+app.include_router(risk_router)
+app.include_router(forecast_router)
+app.include_router(auth_router)
+app.include_router(alerts_router)
 # Webhooks registered WITHOUT auth middleware — AT posts here directly
-app.include_router(webhooks_router, prefix="/api/v1")
+app.include_router(webhooks_router)
 # DRL Policy + Scenarios routers
-app.include_router(rl_policy_router, prefix="/api/v1")
-app.include_router(scenarios_router, prefix="/api/v1")
-
-
-# ── Seed admin user on startup ─────────────────────────────
-@app.on_event("startup")
-async def seed_admin():
-    """Create default admin user if users table is empty."""
-    try:
-        from db.postgres_client import async_session_factory
-        from auth.password_service import hash_password
-        from sqlalchemy import text
-
-        async with async_session_factory() as session:
-            result = await session.execute(text("SELECT COUNT(*) FROM users"))
-            count = result.scalar()
-            if count == 0:
-                hashed = hash_password("HazardGraph2026!")
-                await session.execute(
-                    text(
-                        "INSERT INTO users (username, email, hashed_password, name, role, is_active, preferred_language, created_at, updated_at) "
-                        "VALUES ('admin', 'admin@hazardgraph.io', :pwd, 'Admin User', 'admin', true, 'en', NOW(), NOW()) "
-                        "ON CONFLICT (email) DO NOTHING"
-                    ),
-                    {"pwd": hashed},
-                )
-                await session.commit()
-                logger.info("Default admin user created (admin / HazardGraph2026!)")
-            else:
-                logger.debug("Users table already populated (%d user(s))", count)
-    except Exception as exc:
-        logger.warning("Failed to seed admin user: %s", exc)
+app.include_router(rl_policy_router)
+app.include_router(scenarios_router)
 
 
 # ── Root endpoint ──────────────────────────────────────────
