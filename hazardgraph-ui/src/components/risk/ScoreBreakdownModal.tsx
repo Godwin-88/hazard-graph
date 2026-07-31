@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react'
-import { TrendingUp, TrendingDown, X, AlertTriangle } from 'lucide-react'
+import { useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { TrendingUp, TrendingDown, X, AlertTriangle, Zap, Loader2 } from 'lucide-react'
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
@@ -7,7 +8,10 @@ import {
 } from 'recharts'
 import { cn } from '@/lib/utils'
 import { RegimeBadge } from '@/components/shared/RegimeBadge'
+import { ForecastChart } from '@/components/forecast/ForecastChart'
+import { runCascadeSimulation } from '@/lib/api'
 import type { RegionRiskScore, RegionHistory } from '@/types'
+import type { AllForecasts, CascadeResult } from '@/types'
 
 interface ScoreBreakdownModalProps {
   region: RegionRiskScore | null
@@ -38,25 +42,47 @@ function getScoreColor(score: number): string {
 }
 
 export function ScoreBreakdownModal({ region, history, onClose }: ScoreBreakdownModalProps) {
-  const overlayRef = useRef<HTMLDivElement>(null)
+  const [showCascade, setShowCascade] = useState(false)
+  const [cascadeResult, setCascadeResult] = useState<CascadeResult | null>(null)
+  const [forecastData, setForecastData] = useState<AllForecasts | null>(null)
+  const [forecastLoading, setForecastLoading] = useState(false)
 
-  useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+  const cascadeMutation = useMutation({
+    mutationFn: () =>
+      runCascadeSimulation(region!.id, 8, 500),
+    onSuccess: (data) => {
+      setCascadeResult(data)
+      setShowCascade(true)
+    },
+  })
+
+  const fetchForecast = async () => {
+    if (!region) return
+    setForecastLoading(true)
+    try {
+      const res = await fetch(`/api/v1/forecast/all/${region.id}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('access_token') || ''}` },
+      })
+      if (res.ok) {
+        const data: AllForecasts = await res.json()
+        setForecastData(data)
+      }
+    } catch {
+      // Forecast not available
+    } finally {
+      setForecastLoading(false)
     }
-    document.addEventListener('keydown', handleEsc)
-    return () => document.removeEventListener('keydown', handleEsc)
-  }, [onClose])
+  }
 
-  if (!region) return null
-
-  const pieData = Object.entries(region.components).map(([key, value]) => ({
-    name: key.charAt(0).toUpperCase() + key.slice(1),
-    value: componentWeights[key] * 100,
-    fill: componentColors[key],
-    opacity: Math.max(0.3, value),
-    riskValue: value,
-  }))
+  const pieData = region
+    ? Object.entries(region.components).map(([key, value]) => ({
+        name: key.charAt(0).toUpperCase() + key.slice(1),
+        value: componentWeights[key] * 100,
+        fill: componentColors[key],
+        opacity: Math.max(0.3, value),
+        riskValue: value,
+      }))
+    : []
 
   const historyData = history?.history.map((h) => ({
     date: new Date(h.date).toLocaleDateString('en-KE', { month: 'short', day: 'numeric' }),
@@ -78,7 +104,7 @@ export function ScoreBreakdownModal({ region, history, onClose }: ScoreBreakdown
     }
   })
 
-  const modelWeightData = region.model_weights
+  const modelWeightData = region?.model_weights
     ? Object.entries(region.model_weights).map(([name, weight]) => ({
         name,
         weight: typeof weight === 'number' ? weight : 0,
@@ -86,16 +112,18 @@ export function ScoreBreakdownModal({ region, history, onClose }: ScoreBreakdown
     : []
 
   const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === overlayRef.current) onClose()
+    if (e.target === e.currentTarget) onClose()
   }
+
+  if (!region) return null
 
   return (
     <div
-      ref={overlayRef}
+      ref={undefined}
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={handleOverlayClick}
     >
-      <div className="mx-4 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-surface p-6 shadow-2xl">
+      <div className="mx-4 max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-border bg-surface p-6 shadow-2xl">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -135,6 +163,95 @@ export function ScoreBreakdownModal({ region, history, onClose }: ScoreBreakdown
             </div>
           )}
         </div>
+
+        {/* Action buttons */}
+        <div className="mb-6 flex gap-3">
+          <button
+            onClick={fetchForecast}
+            disabled={forecastLoading}
+            className="flex items-center gap-2 rounded-lg bg-quantifaya-blue/20 px-4 py-2 text-sm text-quantifaya-blue hover:bg-quantifaya-blue/30 transition-colors disabled:opacity-50"
+          >
+            {forecastLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <TrendingUp className="h-4 w-4" />
+            )}
+            {forecastData ? 'Refresh Forecast' : 'Load Forecast'}
+          </button>
+          <button
+            onClick={() => cascadeMutation.mutate()}
+            disabled={cascadeMutation.isPending}
+            className="flex items-center gap-2 rounded-lg bg-quantifaya-green/20 px-4 py-2 text-sm text-quantifaya-green hover:bg-quantifaya-green/30 transition-colors disabled:opacity-50"
+          >
+            {cascadeMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Zap className="h-4 w-4" />
+            )}
+            Run Cascade
+          </button>
+        </div>
+
+        {/* Forecast Chart */}
+        {forecastData && (
+          <div className="mb-6 rounded-lg border border-border bg-surface-elevated p-4">
+            <ForecastChart data={forecastData} regionName={region.name} />
+          </div>
+        )}
+
+        {/* Cascade Results */}
+        {showCascade && cascadeResult && (
+          <div className="mb-6 rounded-lg border border-border bg-surface-elevated p-4">
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-text-secondary">
+              Contagion Cascade Results
+            </h3>
+            <div className="grid grid-cols-3 gap-4 text-sm">
+              <div>
+                <span className="text-text-muted">Critical Node</span>
+                <p className="text-white font-medium capitalize">
+                  {cascadeResult.critical_intervention_node.replace(/_/g, ' ')}
+                </p>
+              </div>
+              <div>
+                <span className="text-text-muted">Expected Affected</span>
+                <p className="text-white font-medium">
+                  {cascadeResult.expected_affected_population_millions.toFixed(1)}M
+                </p>
+              </div>
+              <div>
+                <span className="text-text-muted">Simulation Paths</span>
+                <p className="text-white font-medium">
+                  {cascadeResult.simulation_paths.toLocaleString()}
+                </p>
+              </div>
+            </div>
+            <div className="mt-3">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+                Cascade Probabilities by Region
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(cascadeResult.cascade_probabilities)
+                  .sort(([, a], [, b]) => b - a)
+                  .slice(0, 10)
+                  .map(([regionId, prob]) => (
+                    <div
+                      key={regionId}
+                      className="rounded bg-surface px-2 py-1 text-xs"
+                    >
+                      <span className="text-text-secondary">
+                        {regionId.replace(/_/g, ' ')}
+                      </span>
+                      <span className={`ml-1 font-medium ${
+                        prob > 0.5 ? 'text-risk-red' : prob > 0.3 ? 'text-risk-amber' : 'text-text-muted'
+                      }`}>
+                        {(prob * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Section 1: Score Breakdown Pie */}
         <div className="mb-6">

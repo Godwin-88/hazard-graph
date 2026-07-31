@@ -63,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const data = await res.json();
+      sessionStorage.setItem('access_token', data.access_token);
       const payload = decodeToken(data.access_token);
       setState({
         user: {
@@ -103,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await res.json();
       sessionStorage.setItem('refresh_token', data.refresh_token);
+      sessionStorage.setItem('access_token', data.access_token);
 
       setState({
         user: { id: data.user_id, username, role: data.role },
@@ -116,6 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     sessionStorage.removeItem('refresh_token');
+    sessionStorage.removeItem('access_token');
     setState({
       user: null,
       accessToken: null,

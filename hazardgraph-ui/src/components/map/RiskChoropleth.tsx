@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { MapContainer, TileLayer, GeoJSON, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, GeoJSON, CircleMarker, useMap, Tooltip } from 'react-leaflet'
 import L from 'leaflet'
 import type { RegionRiskScore } from '@/types'
+import type { HazardCluster } from '@/types'
 import { RegionPopup } from './RegionPopup'
 
 interface RiskChoroplethProps {
   regions: RegionRiskScore[]
+  clusters?: HazardCluster[]
   onRegionClick: (region: RegionRiskScore) => void
 }
 
@@ -34,7 +36,20 @@ function MapBoundsSetter() {
   return null
 }
 
-export function RiskChoropleth({ regions, onRegionClick }: RiskChoroplethProps) {
+const CLUSTER_COLORS = [
+  '#0F4C81',
+  '#00C896',
+  '#F59E0B',
+  '#EF4444',
+  '#8B5CF6',
+  '#EC4899',
+  '#14B8A6',
+  '#F97316',
+  '#6366F1',
+  '#84CC16',
+]
+
+export function RiskChoropleth({ regions, clusters = [], onRegionClick }: RiskChoroplethProps) {
   const [geoJsonData, setGeoJsonData] = useState<Record<string, unknown> | null>(null)
   const [selectedRegion, setSelectedRegion] = useState<RegionRiskScore | null>(null)
 
@@ -131,6 +146,29 @@ export function RiskChoropleth({ regions, onRegionClick }: RiskChoroplethProps) 
             onEachFeature={onEachFeature as never}
           />
         )}
+        {clusters.map((cluster, idx) => (
+          <CircleMarker
+            key={cluster.id}
+            center={[cluster.lat, cluster.lon]}
+            radius={Math.max(8, Math.min(20, cluster.member_count * 2))}
+            pathOptions={{
+              fillColor: CLUSTER_COLORS[idx % CLUSTER_COLORS.length],
+              fillOpacity: 0.7,
+              color: CLUSTER_COLORS[idx % CLUSTER_COLORS.length],
+              weight: 2,
+              opacity: 0.9,
+            }}
+          >
+            <Tooltip>
+              <div style={{ fontFamily: 'Raleway, sans-serif', color: '#F9FAFB', fontSize: '12px' }}>
+                <strong>{cluster.label}</strong><br />
+                Risk: {cluster.risk_score.toFixed(0)}<br />
+                {cluster.member_count} regions<br />
+                {cluster.dominant_hazard}
+              </div>
+            </Tooltip>
+          </CircleMarker>
+        ))}
       </MapContainer>
     </div>
   )

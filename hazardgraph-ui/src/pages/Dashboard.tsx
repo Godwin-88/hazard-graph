@@ -1,8 +1,11 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { RiskChoropleth } from '@/components/map/RiskChoropleth'
 import { RiskScoreList } from '@/components/risk/RiskScoreList'
 import { useRiskScores } from '@/hooks/useRiskScores'
+import { fetchHazardClusters } from '@/lib/api'
 import type { RegionRiskScore } from '@/types'
+import type { HazardCluster } from '@/types'
 
 function timeAgo(dateStr: string): string {
   if (!dateStr) return 'never'
@@ -20,10 +23,19 @@ function timeAgo(dateStr: string): string {
 export function Dashboard() {
   const { data, isLoading } = useRiskScores()
   const [selectedRegion, setSelectedRegion] = useState<RegionRiskScore | null>(null)
+  const [showClusters, setShowClusters] = useState(false)
+
+  const { data: clusterData } = useQuery({
+    queryKey: ['hazard-clusters'],
+    queryFn: fetchHazardClusters,
+    refetchInterval: 5 * 60 * 1000,
+    staleTime: 4 * 60 * 1000,
+  })
 
   const summary = data?.summary
   const computedAt = data?.computed_at || ''
   const regions = data?.regions || []
+  const clusters: HazardCluster[] = clusterData?.clusters || []
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -33,6 +45,7 @@ export function Dashboard() {
         <div className="flex w-[65%] flex-col">
           <RiskChoropleth
             regions={regions}
+            clusters={showClusters ? clusters : []}
             onRegionClick={(region) => setSelectedRegion(region)}
           />
           {/* Bottom bar: Summary stats */}
@@ -47,6 +60,24 @@ export function Dashboard() {
               <span>🕐 Updated: <span className="font-medium text-text-primary">{timeAgo(computedAt)}</span></span>
             </div>
           )}
+          {/* Cluster toggle */}
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={() => setShowClusters(!showClusters)}
+              className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                showClusters
+                  ? 'bg-quantifaya-blue text-white'
+                  : 'bg-surface-elevated text-text-secondary border border-border'
+              }`}
+            >
+              {showClusters ? '✓ Clusters' : 'Cluster Overlay'}
+            </button>
+            {showClusters && clusters.length > 0 && (
+              <span className="text-xs text-text-muted">
+                {clusters.length} zones active
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Right: Score list sidebar */}

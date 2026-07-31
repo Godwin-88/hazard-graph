@@ -4,6 +4,22 @@ import type { Alert } from '../hooks/useAlerts';
 import { AlertQueueItem } from '../components/alerts/AlertQueueItem';
 import { AlertApprovalDialog } from '../components/alerts/AlertApprovalDialog';
 import { LoadingSpinner } from '../components/shared/LoadingSpinner';
+import { RegimeBadge } from '../components/shared/RegimeBadge';
+
+function getConfidenceColor(confidence: string): string {
+  switch (confidence) {
+    case 'High': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+    case 'Medium': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+    case 'Low': return 'bg-red-500/20 text-red-400 border-red-500/30';
+    default: return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+  }
+}
+
+function getKellyColor(kelly: number): string {
+  if (kelly > 0.5) return 'text-risk-red font-semibold';
+  if (kelly > 0.2) return 'text-risk-amber';
+  return 'text-text-muted';
+}
 
 export default function AlertReview() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>('pending');

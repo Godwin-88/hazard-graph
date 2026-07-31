@@ -6,6 +6,21 @@ interface AlertQueueItemProps {
   onClick: () => void;
 }
 
+function getConfidenceColor(confidence: string): string {
+  switch (confidence) {
+    case 'High': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+    case 'Medium': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+    case 'Low': return 'bg-red-500/20 text-red-400 border-red-500/30';
+    default: return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+  }
+}
+
+function getKellyColor(kelly: number): string {
+  if (kelly > 0.5) return 'text-risk-red font-semibold';
+  if (kelly > 0.2) return 'text-risk-amber';
+  return 'text-text-muted';
+}
+
 export function AlertQueueItem({ alert, onClick }: AlertQueueItemProps) {
   const statusColors: Record<string, string> = {
     pending: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
@@ -43,6 +58,11 @@ export function AlertQueueItem({ alert, onClick }: AlertQueueItemProps) {
             {alert.current_regime && (
               <RegimeBadge regime={alert.current_regime} />
             )}
+            {alert.confidence && (
+              <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${getConfidenceColor(alert.confidence as string)}`}>
+                {alert.confidence}
+              </span>
+            )}
           </div>
           <p className="text-sm text-gray-400">{preview}</p>
         </div>
@@ -55,11 +75,19 @@ export function AlertQueueItem({ alert, onClick }: AlertQueueItemProps) {
             <span className="text-xs text-gray-500">/100</span>
           </span>
 
+          {/* Kelly priority */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-text-muted">Kelly</span>
+            <span className={`text-sm ${getKellyColor(alert.kelly_priority)}`}>
+              {alert.kelly_priority.toFixed(3)}
+            </span>
+          </div>
+
           {/* Kelly bar */}
           <div className="w-16 h-1.5 rounded-full bg-gray-700 overflow-hidden">
             <div
               className="h-full rounded-full bg-gradient-to-r from-[#0F4C81] to-[#00C896]"
-              style={{ width: `${Math.min(alert.kelly_priority * 100, 100)}%` }}
+              style={{ width: `${Math.min(alert.kelly_priority * 100, 100).toFixed(0)}%` }}
             />
           </div>
 

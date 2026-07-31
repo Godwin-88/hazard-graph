@@ -37,6 +37,29 @@ def _transform_edge(record: dict) -> Optional[dict]:
     r = record.get("r", record)
     if not r:
         return None
+    # Neo4j async driver may return a tuple (start, rel, end) instead of a bare
+    # Relationship object when the Cypher query returns path-like patterns.
+    if isinstance(r, tuple):
+        r = r[1]  # index 1 is always the relationship in a 3-tuple
+    # Handle Neo4j Relationship object by converting to a plain dict
+    if hasattr(r, "_properties"):
+        return {
+            "source": r.start_node.element_id if hasattr(r, "start_node") else "",
+            "target": r.end_node.element_id if hasattr(r, "end_node") else "",
+            "type": r.type,
+            "weight": r._properties.get("weight", 1.0),
+            "lag_days": r._properties.get("lag_days", 0),
+        }
+    # Handle case where r is a plain string (relationship type)
+    if isinstance(r, str):
+        return {
+            "source": record.get("source", ""),
+            "target": record.get("target", ""),
+            "type": r,
+            "weight": 1.0,
+            "lag_days": 0,
+        }
+    # Fallback: treat as plain dict
     rel_type = r.get("type", r.get("_type", "RELATED_TO"))
     props = {k: v for k, v in r.items() if k not in ("type", "_type", "_id")}
     return {
