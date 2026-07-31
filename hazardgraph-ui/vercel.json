@@ -4,6 +4,7 @@
   "outputDirectory": "dist",
   "installCommand": "npm ci",
   "rewrites": [
+    { "source": "/api/:path*", "destination": "https://hazardgraph-api.onrender.com/api/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

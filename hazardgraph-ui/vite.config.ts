@@ -2,8 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
-// VITE_API_URL is set in Vercel dashboard (e.g. https://hazardgraph-api.onrender.com)
-// In dev, it defaults to localhost:8000
+// In dev, the Vite proxy forwards /api requests to http://localhost:8000
 export default defineConfig({
   plugins: [react()],
   resolve: {

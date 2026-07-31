@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     app_name: str = "HazardGraph"
     app_version: str = "1.0.0"
     cors_origins: str = "http://localhost:5173,https://hazardgraph-ui.vercel.app"
+    cors_origins_fallback: str = "https://hazardgraph-ui.vercel.app"
     log_level: str = "INFO"
 
     # Neo4j
@@ -77,7 +78,9 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> List[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        origins = [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        fallback = [o.strip() for o in self.cors_origins_fallback.split(",") if o.strip()]
+        return origins + fallback
 
 
 settings = Settings()

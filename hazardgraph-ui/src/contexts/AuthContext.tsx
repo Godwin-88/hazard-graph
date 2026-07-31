@@ -27,7 +27,7 @@ interface AuthContextType extends AuthState {
 
 export const AuthContext = createContext<AuthContextType | null>(null);
 
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8000') + '/api/v1';
+const API_BASE = '/api/v1';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
