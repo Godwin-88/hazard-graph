@@ -18,13 +18,23 @@ class TestAdvisoryGeneration:
         with patch('groq.AsyncGroq') as mock_groq:
             mock_groq.return_value.chat.completions.create = \
                 AsyncMock(return_value=mock_response)
-            from models.ensemble.bma_engine import BMAResult
-            bma = BMAResult(
-                region_id='kenya', posterior_risk=0.72,
-                epistemic_uncertainty=0.10, confidence='High',
-                model_weights={}, component_probabilities={}
+            advisory = await gen.generate(
+                region_id=sample_risk_score.region_id,
+                region_name=sample_risk_score.name,
+                country=sample_risk_score.country,
+                score=sample_risk_score.score,
+                confidence=0.85,
+                components=sample_risk_score.components,
+                current_regime=sample_risk_score.current_regime,
+                sde_interpretation="drought likely",
+                spi_interpretation="below normal",
+                food_interpretation="rising",
+                ipc_interpretation="stressed",
+                top_features=["rainfall", "food"],
+                language="swahili",
+                lang_code="sw",
+                season_context="Long rains season",
             )
-            advisory = await gen.generate(sample_risk_score, bma)
         assert len(advisory) <= 160, (
             f"Advisory too long: {len(advisory)} chars — '{advisory}'"
         )
@@ -36,13 +46,19 @@ class TestAdvisoryGeneration:
         from alerts.advisory_generator import AdvisoryGenerator
         gen = AdvisoryGenerator()
         with patch('groq.AsyncGroq', side_effect=Exception("No API")):
-            from models.ensemble.bma_engine import BMAResult
-            bma = BMAResult(
-                region_id='kenya', posterior_risk=0.72,
-                epistemic_uncertainty=0.10, confidence='High',
-                model_weights={}, component_probabilities={}
+            advisory = await gen.generate(
+                region_id=sample_risk_score.region_id,
+                region_name=sample_risk_score.name,
+                country=sample_risk_score.country,
+                score=sample_risk_score.score,
+                confidence=0.85,
+                components=sample_risk_score.components,
+                current_regime=sample_risk_score.current_regime,
+                sde_interpretation="drought likely",
+                spi_interpretation="below normal",
+                food_interpretation="rising",
+                ipc_interpretation="stressed",
             )
-            advisory = await gen.generate(sample_risk_score, bma)
         assert len(advisory) > 0
         assert len(advisory) <= 160
 
@@ -54,19 +70,40 @@ class TestAdvisoryGeneration:
         from alerts.feedback_handler import handle_inbound
         from datetime import datetime
         from models.postgres.alerts import Alert, AlertDelivery
-        from sqlalchemy import insert, select
+        from sqlalchemy import insert, select, text
         # Seed: alert + delivery for test phone
-        await postgres_session.execute(insert(Alert).values(
-            id=9999, region_id='kenya', language='swahili',
-            message_text='Test advisory', risk_score_at_trigger=67.0,
-            status='sent', kelly_priority=0.44,
-            generated_at=datetime.utcnow()
-        ).prefix_with('OR IGNORE'))
-        await postgres_session.execute(insert(AlertDelivery).values(
-            alert_id=9999, recipient_phone='+254700000099',
-            at_message_id='test-msg-id', status='Success',
-            dispatched_at=datetime.utcnow()
-        ).prefix_with('OR IGNORE'))
+        await postgres_session.execute(
+            text(
+                "INSERT INTO alerts (id, region_id, language, message_text, "
+                "risk_score_at_trigger, status, generated_at, created_at, updated_at) "
+                "VALUES (:id, :rid, :lang, :msg, :score, :status, :now, :now, :now) "
+                "ON CONFLICT (id) DO NOTHING"
+            ),
+            {
+                "id": 9999,
+                "rid": "kenya",
+                "lang": "swahili",
+                "msg": "Test advisory",
+                "score": 67.0,
+                "status": "sent",
+                "now": datetime.utcnow(),
+            }
+        )
+        await postgres_session.execute(
+            text(
+                "INSERT INTO alert_deliveries (alert_id, recipient_phone, "
+                "at_message_id, status, dispatched_at) "
+                "VALUES (:alert_id, :phone, :msg_id, :status, :now) "
+                "ON CONFLICT DO NOTHING"
+            ),
+            {
+                "alert_id": 9999,
+                "phone": "+254700000099",
+                "msg_id": "test-msg-id",
+                "status": "Success",
+                "now": datetime.utcnow(),
+            }
+        )
         await postgres_session.commit()
 
         reply = await handle_inbound(

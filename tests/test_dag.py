@@ -81,7 +81,11 @@ class TestDAGExecutor:
 
     @pytest.mark.asyncio
     async def test_failed_node_skips_downstream(self):
-        """If a node fails, all downstream nodes are skipped."""
+        """If a node fails, all downstream nodes are skipped.
+
+        The DAG executor catches exceptions internally and stores them
+        in self.errors. Downstream nodes are added to self.skipped.
+        """
         async def failing_node():
             raise RuntimeError("intentional failure")
 
@@ -92,20 +96,31 @@ class TestDAGExecutor:
         dag.add_node('fail', failing_node)
         dag.add_node('down', downstream, depends_on=['fail'])
 
-        with pytest.raises(RuntimeError):
-            await dag.execute()
+        await dag.execute()
 
-        assert 'down' not in dag.results
+        # The failing node should be in errors
         assert 'fail' in dag.errors
+        assert isinstance(dag.errors['fail'], RuntimeError)
+        # The downstream node should be in skipped (not executed)
+        assert 'down' in dag.skipped
+        # The downstream node should NOT be in results
+        assert 'down' not in dag.results
 
     @pytest.mark.asyncio
     async def test_timeout_respected(self):
-        """Node exceeding timeout raises TimeoutError."""
+        """Node exceeding timeout raises TimeoutError.
+
+        The DAG executor catches TimeoutError internally and stores it
+        in self.errors instead of re-raising.
+        """
         async def slow():
             await asyncio.sleep(10)
 
         dag = AsyncDAGExecutor()
         dag.add_node('slow', slow, timeout_seconds=1)
 
-        with pytest.raises(asyncio.TimeoutError):
-            await dag.execute()
+        await dag.execute()
+
+        # The slow node should be in errors with a TimeoutError
+        assert 'slow' in dag.errors
+        assert isinstance(dag.errors['slow'], TimeoutError)

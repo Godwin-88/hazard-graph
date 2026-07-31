@@ -129,3 +129,11 @@ class RedisClient:
 
 # Singleton
 redis_client = RedisClient()
+
+
+# ── FastAPI dependency ────────────────────────────────────
+
+
+async def get_redis():
+    """FastAPI dependency yielding the Redis client singleton."""
+    return redis_client

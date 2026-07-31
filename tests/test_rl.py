@@ -50,6 +50,7 @@ class TestGNNPolicy:
         from models.rl.graph_state import N_REGIONS, N_ACTIONS
         from models.rl.alert_env import HazardAlertEnv
         policy = GNNPolicyNetwork()
+        policy.eval()  # disable dropout for deterministic output
         env = HazardAlertEnv()
         env.reset()
         state = env.get_graph_state()
@@ -65,6 +66,7 @@ class TestGNNPolicy:
         from models.rl.gnn_policy import GNNPolicyNetwork
         from models.rl.alert_env import HazardAlertEnv
         policy = GNNPolicyNetwork()
+        policy.eval()
         env = HazardAlertEnv()
         env.reset()
         state = env.get_graph_state()
@@ -79,6 +81,7 @@ class TestGNNPolicy:
         from models.rl.gnn_policy import GNNPolicyNetwork
         from models.rl.alert_env import HazardAlertEnv
         policy = GNNPolicyNetwork()
+        policy.eval()
         env = HazardAlertEnv()
         env.reset()
         state = env.get_graph_state()
@@ -91,15 +94,23 @@ class TestGNNPolicy:
         from models.rl.gnn_policy import GNNPolicyNetwork
         from models.rl.alert_env import HazardAlertEnv
         policy = GNNPolicyNetwork()
+        policy.eval()  # disable dropout so forward pass is deterministic
         env = HazardAlertEnv()
         env.reset()
         state = env.get_graph_state()
+
+        # First forward pass to get logits
         logits, _ = policy(
             state.node_features, state.edge_index, state.edge_weights
         )
         expected_actions = logits.argmax(dim=-1)
+
+        # Second forward pass via act() should give same result
         actions, _, _ = policy.act(state, deterministic=True)
-        assert torch.all(actions == expected_actions)
+        assert torch.all(actions == expected_actions), (
+            f"Deterministic act differs from argmax: "
+            f"expected={expected_actions}, got={actions}"
+        )
 
 
 class TestPPOTrainer:

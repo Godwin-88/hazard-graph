@@ -4,8 +4,7 @@ import pytest
 
 
 class TestRiskScoring:
-    @pytest.mark.asyncio
-    async def test_vulnerability_multiplier_range(self):
+    def test_vulnerability_multiplier_range(self):
         """All 11 countries produce multipliers in valid range."""
         from risk.vulnerability_data import get_all_vulnerability_multipliers
         multipliers = get_all_vulnerability_multipliers()
@@ -15,8 +14,7 @@ class TestRiskScoring:
                 f"{country} vulnerability multiplier {vm} out of range"
             )
 
-    @pytest.mark.asyncio
-    async def test_sde_simulation_probabilities_sum(self):
+    def test_sde_simulation_probabilities_sum(self):
         """SDE Monte Carlo outputs are valid probabilities."""
         from models.stochastic.rainfall_sde import RainfallSDE
         sde = RainfallSDE()
@@ -27,8 +25,7 @@ class TestRiskScoring:
         # p_severe <= p_drought (subset)
         assert result['p_severe_4w'] <= result['p_drought_4w'] + 0.01
 
-    @pytest.mark.asyncio
-    async def test_sde_drought_signal_when_spi_negative(self):
+    def test_sde_drought_signal_when_spi_negative(self):
         """Negative SPI should produce higher drought probability."""
         from models.stochastic.rainfall_sde import RainfallSDE
         sde = RainfallSDE()
@@ -38,8 +35,7 @@ class TestRiskScoring:
             "Drought probability should be higher when SPI is negative"
         )
 
-    @pytest.mark.asyncio
-    async def test_bma_weights_sum_to_one(self):
+    def test_bma_weights_sum_to_one(self):
         """BMA model weights must always sum to 1.0."""
         from models.ensemble.bma_engine import BMAEngine
         engine = BMAEngine()
@@ -49,8 +45,7 @@ class TestRiskScoring:
             f"BMA weights sum to {total}, expected 1.0"
         )
 
-    @pytest.mark.asyncio
-    async def test_kelly_negative_for_low_risk(self):
+    def test_kelly_negative_for_low_risk(self):
         """Kelly priority must be negative for low-risk low-confidence alerts."""
         from models.ensemble.kelly_prioritiser import compute_kelly_priority
         from models.ensemble.bma_engine import BMAResult
@@ -84,7 +79,7 @@ class TestRiskScoring:
                 )
         from risk.scoring_service import compute_risk_scores
         async with neo4j_driver.session() as s:
-            scores = await compute_risk_scores(s, postgres_session)
+            scores = await compute_risk_scores(s)
         for score in scores:
             assert 0.0 <= score.score <= 100.0, (
                 f"{score.region_id} score {score.score} out of range"

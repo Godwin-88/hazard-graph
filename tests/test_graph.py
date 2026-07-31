@@ -40,7 +40,11 @@ class TestGraphSchema:
 
     @pytest.mark.asyncio
     async def test_causal_edge_parameterised_query(self, neo4j_driver):
-        """Verify no f-string injection — parameterised Cypher only."""
+        """Verify no f-string injection — parameterised Cypher only.
+
+        The write_causal_edges function uses the singleton neo4j_client
+        internally, not a session argument. It accepts (edges, run_id).
+        """
         from causal.edge_writer import write_causal_edges
         from causal.varlingam_engine import CausalEdgeResult
         from datetime import datetime
@@ -53,16 +57,16 @@ class TestGraphSchema:
             region_id='kenya_test',
             discovered_at=datetime.utcnow()
         )]
-        async with neo4j_driver.session() as session:
-            count = await write_causal_edges(
-                session, test_edges, run_id='test-run-001'
-            )
+        # write_causal_edges takes (edges, run_id) — no session arg
+        count = await write_causal_edges(
+            test_edges, run_id='test-run-001'
+        )
         assert count == 1
         # Verify soft-delete works: re-run with different run_id
+        count2 = await write_causal_edges(
+            test_edges, run_id='test-run-002'
+        )
         async with neo4j_driver.session() as session:
-            count2 = await write_causal_edges(
-                session, test_edges, run_id='test-run-002'
-            )
             result = await session.run(
                 'MATCH (e:CausalEdge {region_id: $rid, active: false}) '
                 'RETURN count(e) as n',
@@ -73,8 +77,17 @@ class TestGraphSchema:
 
     @pytest.mark.asyncio
     async def test_regime_in_regime_relationship(self, neo4j_driver):
-        """Verify IN_REGIME relationship is created correctly."""
+        """Verify IN_REGIME relationship is created correctly.
+
+        First removes any existing IN_REGIME relationship for Kenya
+        to ensure a clean test.
+        """
         async with neo4j_driver.session() as session:
+            # Remove any existing IN_REGIME relationship first
+            await session.run(
+                'MATCH (r:Region {name: "Kenya"})-[rel:IN_REGIME]->() '
+                'DELETE rel'
+            )
             # Set a regime on Kenya
             await session.run(
                 'MATCH (r:Region {name: "Kenya"}) '

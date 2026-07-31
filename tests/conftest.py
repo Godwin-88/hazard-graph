@@ -18,14 +18,6 @@ import redis.asyncio as aioredis
 os.environ.setdefault('APP_ENV', 'test')
 
 
-@pytest.fixture(scope='session')
-def event_loop():
-    """Single event loop for entire test session."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
 @pytest_asyncio.fixture(scope='session')
 async def neo4j_driver():
     """Connect to test Neo4j container."""
@@ -115,7 +107,7 @@ async def api_client(neo4j_driver, postgres_session, redis_client):
 
 
 @pytest_asyncio.fixture
-async def auth_headers(api_client):
+async def auth_headers(api_client, postgres_session):
     """Get JWT token for test admin user."""
     response = await api_client.post('/api/v1/auth/login', json={
         'username': 'admin',
