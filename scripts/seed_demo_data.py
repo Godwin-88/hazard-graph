@@ -169,7 +169,6 @@ async def seed_postgres(postgres_session):
             'risk_score': 89.4,
             'kelly_priority': 0.85,
             'status': 'pending',
-            'confidence': 'High',
         },
         {
             'region_id': 'region_south_sudan',
@@ -182,7 +181,6 @@ async def seed_postgres(postgres_session):
             'risk_score': 91.7,
             'kelly_priority': 0.78,
             'status': 'pending',
-            'confidence': 'High',
         },
         {
             'region_id': 'region_ethiopia',
@@ -195,7 +193,6 @@ async def seed_postgres(postgres_session):
             'risk_score': 82.1,
             'kelly_priority': 0.72,
             'status': 'pending',
-            'confidence': 'High',
         },
         {
             'region_id': 'region_kenya',
@@ -207,7 +204,6 @@ async def seed_postgres(postgres_session):
             'risk_score': 67.3,
             'kelly_priority': 0.55,
             'status': 'pending',
-            'confidence': 'Medium',
         },
         {
             'region_id': 'region_sudan',
@@ -219,7 +215,6 @@ async def seed_postgres(postgres_session):
             'risk_score': 71.2,
             'kelly_priority': 0.60,
             'status': 'pending',
-            'confidence': 'Medium',
         },
     ]
 
@@ -231,8 +226,7 @@ async def seed_postgres(postgres_session):
             risk_score_at_trigger=a['risk_score'],
             kelly_priority=a['kelly_priority'],
             status=a['status'],
-            generated_at=datetime.datetime.utcnow(),
-            confidence=a['confidence'],
+            generated_at=datetime.datetime.now(datetime.timezone.utc),
         ))
 
     await postgres_session.commit()
