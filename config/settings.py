@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # App
     app_name: str = "HazardGraph"
     app_version: str = "1.0.0"
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "http://localhost:5173,https://hazardgraph-ui.vercel.app"
     log_level: str = "INFO"
 
     # Neo4j
