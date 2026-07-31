@@ -240,7 +240,7 @@ class BMAEngine:
         weights_json = json.dumps(weights)
 
         if neo4j_session:
-            await neo4j_session.run(
+            await neo4j_client.execute_write(
                 """MERGE (b:BMAScore {id: $id})
                 SET b.posterior_risk = $posterior,
                     b.epistemic_uncertainty = $uncertainty,

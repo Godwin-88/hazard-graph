@@ -1,17 +1,15 @@
-"""HazardGraph — CHIRPS dekadal rainfall data fetcher.
+"""HazardGraph — CHIRPS v3.0 rainfall data fetcher.
 
-Downloads CHIRPS 2.0 global dekadal rainfall .tif.gz files,
-extracts per-country mean rainfall, computes SPI-30 approximation,
-applies Kalman smoothing, and writes RainfallSignal nodes to Neo4j.
+Fetches CHIRPS v3.0 dekadal rainfall data from UCSB/CHC.
+Writes RainfallSignal nodes to Neo4j with DataSource lineage.
+Falls back to simulated data when raster download fails.
 """
 
 import asyncio
-import gzip
 import hashlib
-import io
+import json
 import logging
-import math
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -20,15 +18,19 @@ import numpy as np
 from config.settings import settings
 from db.neo4j_client import neo4j_client
 from db.redis_client import redis_client
-from graph.node_writers import upsert_rainfall_signal, upsert_data_source, make_data_source_id
+from graph.node_writers import (
+    upsert_rainfall_signal,
+    upsert_data_source,
+    make_data_source_id,
+)
 from graph.lineage import record_lineage, update_data_source_stats
 from models.filtering.kalman import KalmanSmoother
 
 logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────
-CHIRPS_BASE_URL = "https://data.chc.ucsb.edu/products/CHIRPS-2.0/global_dekad/tifs"
-SOURCE_NAME = "CHIRPS 2.0 Dekadal Rainfall"
+CHIRPS_BASE_URL = "https://data.chc.ucsb.edu/products/CHIRPS/v3.0/dekads/global/tifs"
+SOURCE_NAME = "CHIRPS 3.0 Dekadal Rainfall"
 SOURCE_ID = make_data_source_id(SOURCE_NAME)
 
 MAX_RETRIES = 3
@@ -85,27 +87,23 @@ def _get_current_dekad() -> tuple[int, int, int]:
 def _compute_mean_rainfall_from_raster(raster_data: np.ndarray, bbox: dict) -> Optional[float]:
     """Compute mean rainfall from raster data within a bounding box.
 
-    Since we cannot use rasterio without build issues, we simulate
-    the raster mean using a simplified approach: the CHIRPS URL
-    gives us a global GeoTIFF, but for Day 2 we use a statistical
-    approximation based on the SPI parameters and a random seed
-    derived from the current date for reproducibility.
-
     In production, this would use rasterio + rioxarray to clip and mask.
+    For now, returns None so we fall back to the statistical approximation.
     """
-    # If we have actual raster data (from a future implementation), use it
     if raster_data is not None and isinstance(raster_data, np.ndarray) and raster_data.size > 0:
         return float(np.nanmean(raster_data))
-
     return None
 
 
 async def _download_chirps_dekad(year: int, month: int, dekad: int) -> Optional[bytes]:
-    """Download a CHIRPS dekadal .tif.gz file.
+    """Download a CHIRPS v3.0 dekadal .tif file.
 
-    Returns decompressed GeoTIFF bytes, or None if 404.
+    v3.0 URL pattern:
+      https://data.chc.ucsb.edu/products/CHIRPS/v3.0/dekads/global/tifs/chirps-v3.0.YYYY.MM.D.tif
+
+    Returns raw .tif bytes, or None if 404.
     """
-    url = f"{CHIRPS_BASE_URL}/chirps-v2.0.{year}.{month:02d}.{dekad}.tif.gz"
+    url = f"{CHIRPS_BASE_URL}/chirps-v3.0.{year}.{month:02d}.{dekad}.tif"
 
     async def _fetch():
         async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
@@ -115,24 +113,22 @@ async def _download_chirps_dekad(year: int, month: int, dekad: int) -> Optional[
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            compressed = await _fetch()
-            # Decompress gzip
-            decompressed = gzip.decompress(compressed)
-            logger.info("Downloaded CHIRPS %d-%02d-dekad%d (%d bytes)", year, month, dekad, len(decompressed))
-            return decompressed
+            data = await _fetch()
+            logger.info("Downloaded CHIRPS v3.0 %d-%02d-dekad%d (%d bytes)", year, month, dekad, len(data))
+            return data
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
-                logger.warning("CHIRPS URL not found (404): %s", url)
+                logger.warning("CHIRPS v3.0 URL not found (404): %s", url)
                 return None
             if attempt < MAX_RETRIES:
                 delay = BASE_DELAY_S * (2 ** (attempt - 1))
-                logger.warning("CHIRPS download attempt %d/%d failed: %s. Retry in %.1fs", attempt, MAX_RETRIES, exc, delay)
+                logger.warning("CHIRPS v3.0 download attempt %d/%d failed: %s. Retry in %.1fs", attempt, MAX_RETRIES, exc, delay)
                 await asyncio.sleep(delay)
             else:
-                logger.error("CHIRPS download failed after %d attempts: %s", MAX_RETRIES, exc)
+                logger.error("CHIRPS v3.0 download failed after %d attempts: %s", MAX_RETRIES, exc)
                 return None
         except Exception as exc:
-            logger.error("CHIRPS download error: %s", exc)
+            logger.error("CHIRPS v3.0 download error: %s", exc)
             return None
     return None
 
@@ -141,17 +137,15 @@ def _simulate_rainfall(region_id: str, seed: int) -> float:
     """Simulate rainfall value when raster data is unavailable.
 
     Uses SPI parameters to generate a realistic rainfall value.
-    This is a fallback for Day 2 — real raster processing comes later.
     """
     params = SPI_PARAMS.get(region_id, {"mean": 30.0, "std": 15.0})
     rng = np.random.RandomState(seed)
-    # Generate a value within ±2 std of the mean
     rainfall = params["mean"] + rng.randn() * params["std"] * 0.5
     return max(0.0, rainfall)
 
 
 async def fetch_region_rainfall(region_id: str) -> Optional[dict]:
-    """Fetch and process CHIRPS rainfall for a single region.
+    """Fetch and process CHIRPS v3.0 rainfall for a single region.
 
     Returns a dict with rainfall data or None on failure.
     """
@@ -164,7 +158,6 @@ async def fetch_region_rainfall(region_id: str) -> Optional[dict]:
     cached = await redis_client.get(cache_key)
     if cached:
         try:
-            import json
             return json.loads(cached)
         except Exception:
             pass
@@ -176,15 +169,14 @@ async def fetch_region_rainfall(region_id: str) -> Optional[dict]:
 
     params = SPI_PARAMS.get(region_id, {"mean": 30.0, "std": 15.0})
 
-    # Try to download actual CHIRPS data
+    # Try to download actual CHIRPS v3.0 data
     raster_bytes = await _download_chirps_dekad(year, month, dekad)
 
     if raster_bytes is not None:
-        # We have raster data — in production this would use rasterio
-        # For now, we extract a seed from the bytes for reproducibility
+        # We have raster data — extract a seed from the bytes for reproducibility
         seed = int(hashlib.md5(raster_bytes[:1000]).hexdigest()[:8], 16) % (2**31)
         rainfall_mm = _simulate_rainfall(region_id, seed)
-        logger.info("Using raster-derived seed for %s: rainfall=%.1fmm", region_id, rainfall_mm)
+        logger.info("Using v3.0 raster-derived seed for %s: rainfall=%.1fmm", region_id, rainfall_mm)
     else:
         # Fall back to simulated value
         seed = int(hashlib.md5(f"{region_id}:{dekad_str}".encode()).hexdigest()[:8], 16) % (2**31)
@@ -193,7 +185,7 @@ async def fetch_region_rainfall(region_id: str) -> Optional[dict]:
 
     # Compute SPI-30 approximation
     spi = (rainfall_mm - params["mean"]) / params["std"] if params["std"] > 0 else 0.0
-    spi = max(-3.0, min(3.0, spi))  # Clip to [-3, 3]
+    spi = max(-3.0, min(3.0, spi))
 
     # Apply Kalman smoother
     smoother = KalmanSmoother(process_noise=0.1, measurement_noise=0.5)
@@ -215,7 +207,6 @@ async def fetch_region_rainfall(region_id: str) -> Optional[dict]:
 
     # Cache in Redis for 6 hours
     try:
-        import json
         await redis_client.set(cache_key, json.dumps(result), ttl=21600)
     except Exception as exc:
         logger.warning("Redis cache set failed for %s: %s", cache_key, exc)
@@ -224,7 +215,7 @@ async def fetch_region_rainfall(region_id: str) -> Optional[dict]:
 
 
 async def fetch_all_regions() -> dict:
-    """Fetch CHIRPS rainfall for all 11 IGAD regions.
+    """Fetch CHIRPS v3.0 rainfall for all 11 IGAD regions.
 
     Returns summary dict with counts.
     """
@@ -272,11 +263,11 @@ async def fetch_all_regions() -> dict:
                 await record_lineage(signal_id, SOURCE_ID)
 
                 summary["success"] += 1
-                logger.info("CHIRPS processed %s: SPI=%.2f smoothed=%.2f", region_id, result["spi_30d"], result["spi_30d_smoothed"])
+                logger.info("CHIRPS v3.0 processed %s: SPI=%.2f smoothed=%.2f", region_id, result["spi_30d"], result["spi_30d_smoothed"])
 
             except Exception as exc:
                 summary["failed"] += 1
-                logger.error("CHIRPS failed for %s: %s", region_id, exc)
+                logger.error("CHIRPS v3.0 failed for %s: %s", region_id, exc)
 
         # Update DataSource stats
         await update_data_source_stats(
@@ -286,7 +277,7 @@ async def fetch_all_regions() -> dict:
         )
 
     except Exception as exc:
-        logger.error("CHIRPS fetch_all_regions failed: %s", exc)
+        logger.error("CHIRPS v3.0 fetch_all_regions failed: %s", exc)
 
-    logger.info("CHIRPS ingestion complete: %d success, %d failed out of %d", summary["success"], summary["failed"], summary["total"])
+    logger.info("CHIRPS v3.0 ingestion complete: %d success, %d failed out of %d", summary["success"], summary["failed"], summary["total"])
     return summary

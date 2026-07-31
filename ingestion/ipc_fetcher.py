@@ -2,7 +2,7 @@
 
 Fetches IPC acute food insecurity phase data for IGAD countries.
 Primary source: IPC API (https://api.ipcinfo.org).
-Fallback: FEWS NET API (https://fews.net/api/v1/ipc/).
+Fallback: FEWS NET API (https://fdw.fews.net/api) with JWT auth.
 Writes IPCPhaseSignal nodes to Neo4j and creates alerts for phase ≥ 3.
 """
 
@@ -10,11 +10,13 @@ import asyncio
 import hashlib
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
 
+from config.settings import settings
 from db.neo4j_client import neo4j_client
 from db.postgres_client import async_session_factory
 from db.redis_client import redis_client
@@ -48,9 +50,94 @@ ISO3_TO_REGION = {
     "RWA": "region_rwanda",
 }
 
+# ── FEWS NET JWT Token Cache ──────────────────────────────
+_fews_token: str | None = None
+_fews_token_expiry: float = 0.0
+
+
+async def _get_fews_net_token() -> str | None:
+    """Authenticate with FEWS NET API and return a JWT token.
+
+    POSTs credentials to https://fdw.fews.net/api-token-auth/.
+    Caches the token in memory for 23 hours (tokens typically last 24h).
+    """
+    global _fews_token, _fews_token_expiry
+
+    # Return cached token if still valid (23h window)
+    if _fews_token and time.time() < _fews_token_expiry:
+        return _fews_token
+
+    username = settings.fews_net_username
+    password = settings.fews_net_password
+    if not username or not password:
+        logger.warning("FEWS NET credentials not configured in .env")
+        return None
+
+    auth_url = f"{settings.fews_net_base_url}/api-token-auth/"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                auth_url,
+                data={"username": username, "password": password},
+            )
+            response.raise_for_status()
+            data = response.json()
+            _fews_token = data["token"]
+            # Cache for 23 hours (tokens typically last 24h)
+            _fews_token_expiry = time.time() + 23 * 3600
+            logger.info("FEWS NET JWT token obtained successfully")
+            return _fews_token
+    except Exception as exc:
+        logger.error("FEWS NET authentication failed: %s", exc)
+        return None
+
+
+async def _fetch_json_with_auth(url: str, token: str, timeout: int = 30) -> Optional[dict | list]:
+    """Fetch JSON from a URL using JWT Bearer auth with retry logic."""
+    async def _fetch():
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            response = await client.get(
+                url,
+                headers={"Authorization": f"JWT {token}"},
+            )
+            response.raise_for_status()
+            return response.json()
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            return await _fetch()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 401:
+                # Token may have expired — clear cache and retry once
+                global _fews_token, _fews_token_expiry
+                _fews_token = None
+                _fews_token_expiry = 0.0
+                new_token = await _get_fews_net_token()
+                if new_token:
+                    # Retry with new token
+                    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                        response = await client.get(
+                            url,
+                            headers={"Authorization": f"JWT {new_token}"},
+                        )
+                        response.raise_for_status()
+                        return response.json()
+                return None
+            if attempt < MAX_RETRIES:
+                delay = BASE_DELAY_S * (2 ** (attempt - 1))
+                logger.warning("FEWS NET API error, attempt %d/%d: %s. Retry in %.1fs", attempt, MAX_RETRIES, exc, delay)
+                await asyncio.sleep(delay)
+            else:
+                logger.error("FEWS NET API failed after %d attempts: %s", MAX_RETRIES, exc)
+                return None
+        except Exception as exc:
+            logger.error("FEWS NET API request error: %s", exc)
+            return None
+    return None
+
 
 async def _fetch_json(url: str, timeout: int = 30) -> Optional[dict]:
-    """Fetch JSON from a URL with retry logic."""
+    """Fetch JSON from a URL with retry logic (no auth)."""
     async def _fetch():
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             response = await client.get(url)
@@ -121,38 +208,56 @@ async def fetch_from_ipc_api() -> list[dict]:
 
 
 async def fetch_from_fews_net(iso3: str) -> Optional[dict]:
-    """Fallback: fetch IPC data from FEWS NET API for a single country."""
-    url = f"https://fews.net/api/v1/ipc/?format=json&country={iso3}"
-    data = await _fetch_json(url)
+    """Fetch IPC data from FEWS NET API for a single country using JWT auth.
 
-    if not data:
+    Uses the correct base URL: https://fdw.fews.net/api
+    Authenticates via POST to /api-token-auth/ then uses JWT Bearer token.
+    """
+    token = await _get_fews_net_token()
+    if not token:
+        logger.warning("No FEWS NET token available for %s", iso3)
         return None
 
-    if isinstance(data, list) and len(data) > 0:
-        entry = data[0]
-    elif isinstance(data, dict):
-        entry = data
-    else:
-        return None
+    # Try multiple possible endpoints for IPC phase data
+    endpoints = [
+        f"{settings.fews_net_base_url}/ipc/?format=json&country={iso3}",
+        f"{settings.fews_net_base_url}/ipcphase/?format=json&country={iso3}",
+        f"{settings.fews_net_base_url}/ipcclassification/?format=json&country={iso3}",
+    ]
 
-    phase = entry.get("phase", entry.get("ipc_phase", entry.get("classification", 0)))
-    if isinstance(phase, str):
-        try:
-            phase = int(phase)
-        except ValueError:
-            phase = 0
+    for url in endpoints:
+        data = await _fetch_json_with_auth(url, token)
+        if data:
+            # Parse the response — could be list or dict
+            entries = data if isinstance(data, list) else data.get("results", data.get("data", [data]))
+            if entries and len(entries) > 0:
+                entry = entries[0] if isinstance(entries, list) else entries
 
-    population = entry.get("population_affected", entry.get("population", 0))
-    reference = entry.get("reference_date", entry.get("analysis_date", str(datetime.now(timezone.utc).year)))
+                phase = entry.get("phase", entry.get("ipc_phase", entry.get("classification", entry.get("ipc", 0))))
+                if isinstance(phase, str):
+                    try:
+                        phase = int(phase)
+                    except ValueError:
+                        phase = 0
 
-    return {
-        "iso3": iso3,
-        "region_id": ISO3_TO_REGION.get(iso3, ""),
-        "phase": phase,
-        "population_affected": int(population),
-        "reference_date": str(reference),
-        "source": "fews_net",
-    }
+                population = entry.get("population_affected", entry.get("population", entry.get("affected_population", 0)))
+                reference = entry.get(
+                    "reference_date",
+                    entry.get("analysis_date", entry.get("date", str(datetime.now(timezone.utc).year))),
+                )
+
+                logger.info("FEWS NET returned data for %s: Phase %d", iso3, phase)
+                return {
+                    "iso3": iso3,
+                    "region_id": ISO3_TO_REGION.get(iso3, ""),
+                    "phase": phase,
+                    "population_affected": int(population),
+                    "reference_date": str(reference),
+                    "source": "fews_net",
+                }
+
+    logger.warning("No FEWS NET data found for %s across any endpoint", iso3)
+    return None
 
 
 async def fetch_all_countries() -> dict:

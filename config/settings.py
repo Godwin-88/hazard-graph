@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     at_env: str = "sandbox"
     at_sender: str = "HAZARDGRPH"
 
+    # FEWS NET
+    fews_net_username: str = ""
+    fews_net_password: str = ""
+    fews_net_base_url: str = "https://fdw.fews.net/api"
+
     # JWT
     jwt_secret_key: str = "change-this-to-a-32-char-minimum-secret"
     jwt_algorithm: str = "HS256"

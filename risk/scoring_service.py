@@ -65,10 +65,10 @@ async def compute_risk_scores(neo4j_session) -> list[RegionRiskScore]:
     """
     regions_query = """
     MATCH (r:Region)
-    OPTIONAL MATCH (r)-[:HAS_SIGNAL]->(rs:RainfallSignal)
-    OPTIONAL MATCH (r)-[:HAS_SIGNAL]->(fs:FoodPriceSignal)
-    OPTIONAL MATCH (r)-[:HAS_SIGNAL]->(is_:IPCPhaseSignal)
-    OPTIONAL MATCH (r)-[:HAS_SIGNAL]->(ss:StochasticSignal)
+    OPTIONAL MATCH (rs:RainfallSignal)-[:MEASURED_IN]->(r)
+    OPTIONAL MATCH (fs:FoodPriceSignal)-[:MEASURED_IN]->(r)
+    OPTIONAL MATCH (is_:IPCPhaseSignal)-[:MEASURED_IN]->(r)
+    OPTIONAL MATCH (ss:StochasticSignal)-[:MEASURED_IN]->(r)
     RETURN r.id AS region_id,
            r.name AS name,
            r.country AS country,
@@ -89,7 +89,7 @@ async def compute_risk_scores(neo4j_session) -> list[RegionRiskScore]:
     regions = await neo4j_client.execute_read(regions_query)
 
     raw_scores: list[tuple[str, str, str, float, dict]] = []
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
 
     for region in regions:
         region_id = region["region_id"]
@@ -147,8 +147,9 @@ async def compute_risk_scores(neo4j_session) -> list[RegionRiskScore]:
         delta = 0.0
         try:
             async with async_session_factory() as db_session:
+                from sqlalchemy import text
                 result = await db_session.execute(
-                    "SELECT score FROM risk_history WHERE region_id = :rid ORDER BY computed_at DESC LIMIT 1",
+                    text("SELECT score FROM risk_history WHERE region_id = :rid ORDER BY computed_at DESC LIMIT 1"),
                     {"rid": region_id},
                 )
                 row = result.fetchone()
@@ -182,7 +183,6 @@ async def compute_risk_scores(neo4j_session) -> list[RegionRiskScore]:
 
         try:
             async with async_session_factory() as db_session:
-                from sqlalchemy import text
                 await db_session.execute(
                     text(
                         "INSERT INTO risk_history (region_id, score, delta, component_scores_json, vulnerability_multiplier, current_regime, computed_at) "
