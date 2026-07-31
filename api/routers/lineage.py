@@ -14,7 +14,7 @@ from graph.lineage import get_lineage
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["lineage"])
+router = APIRouter(prefix="/api/v1", tags=["lineage"])
 
 
 @router.get("/lineage")

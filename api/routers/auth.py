@@ -25,7 +25,7 @@ from auth.rate_limiter import rate_limiter
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["auth"])
+router = APIRouter(prefix="/api/v1", tags=["auth"])
 
 
 # ── Schemas ────────────────────────────────────────────────

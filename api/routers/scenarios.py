@@ -9,7 +9,7 @@ from db.neo4j_client import get_neo4j_session
 from api.deps import get_redis
 import json
 
-router = APIRouter(prefix='/scenarios', tags=['Scenarios'])
+router = APIRouter(prefix='/api/v1/scenarios', tags=['Scenarios'])
 
 
 class CascadeRequest(BaseModel):

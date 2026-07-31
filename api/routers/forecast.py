@@ -11,7 +11,7 @@ from db.neo4j_client import get_neo4j_session
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["forecast"])
+router = APIRouter(prefix="/api/v1", tags=["forecast"])
 
 
 @router.get("/forecast/lstm/{region_id}")

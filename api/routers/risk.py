@@ -25,7 +25,7 @@ from models.stochastic.rainfall_sde import RainfallSDE
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["risk"])
+router = APIRouter(prefix="/api/v1", tags=["risk"])
 
 bma_engine = BMAEngine()
 sde_engine = RainfallSDE()

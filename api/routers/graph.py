@@ -15,7 +15,7 @@ from db.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["graph"])
+router = APIRouter(prefix="/api/v1", tags=["graph"])
 
 
 def _transform_node(record: dict) -> dict:
