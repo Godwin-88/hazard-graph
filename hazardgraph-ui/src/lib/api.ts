@@ -25,7 +25,7 @@ function getAuthHeaders(): Record<string, string> {
   return headers
 }
 
-async function fetchJson<T>(
+export async function fetchJson<T>(
   url: string,
   options?: RequestInit,
   retries: number = 3,

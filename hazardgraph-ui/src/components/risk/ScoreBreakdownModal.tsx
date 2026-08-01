@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { TrendingUp, TrendingDown, X, AlertTriangle, Zap, Loader2 } from 'lucide-react'
+import { TrendingUp, TrendingDown, X, AlertTriangle, Zap, Loader2, Info } from 'lucide-react'
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
@@ -408,26 +408,96 @@ export function ScoreBreakdownModal({ region, history, onClose }: ScoreBreakdown
         )}
 
         {/* Footer: Metadata */}
-        <div className="flex items-center justify-between border-t border-border pt-4 text-sm text-text-muted">
-          <div className="flex items-center gap-1 text-text-muted">
-            <span className="font-medium">VM:</span>
-            <span>{region.vulnerability_multiplier.toFixed(3)}</span>
+        <div className="border-t border-border pt-4">
+          {/* VM */}
+          <div className="mb-3 flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2 text-text-muted">
+              <span className="font-medium">VM</span>
+              <span className="text-xs">(Vulnerability Multiplier)</span>
+              <div className="group relative">
+                <Info className="h-3.5 w-3.5 cursor-help text-text-muted" />
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden w-64 rounded-lg bg-gray-900 p-3 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                  Composite index from World Bank/UNDP data.
+                  Weights: poverty 40%, road access 25%, pastoral 20%, health 15%.
+                  Range 1.0 (low) – 2.5 (critical).
+                  Acts as a risk amplifier — higher VM means the same hazard has a larger impact.
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                region.vulnerability_multiplier >= 2.0
+                  ? 'bg-risk-red/20 text-risk-red border border-risk-red/30'
+                  : region.vulnerability_multiplier >= 1.5
+                    ? 'bg-risk-amber/20 text-risk-amber border border-risk-amber/30'
+                    : 'bg-risk-green/20 text-risk-green border border-risk-green/30'
+              }`}>
+                {region.vulnerability_multiplier >= 2.0 ? 'Critical' : region.vulnerability_multiplier >= 1.5 ? 'High' : region.vulnerability_multiplier >= 1.3 ? 'Moderate' : 'Low'}
+              </span>
+              <span className="font-mono text-text-primary">{region.vulnerability_multiplier.toFixed(3)}</span>
+            </div>
           </div>
-          <div className="flex items-center gap-1 text-text-muted">
-            <span className="font-medium">Kelly Priority:</span>
-            <span
-              className={cn(
-                'font-semibold',
-                region.kelly_priority > 0.5
-                  ? 'text-risk-red'
-                  : region.kelly_priority > 0.2
-                    ? 'text-risk-amber'
-                    : 'text-text-muted',
-              )}
-            >
-              {region.kelly_priority.toFixed(3)}
-            </span>
+
+          {/* Kelly Priority */}
+          <div className="mb-3 flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2 text-text-muted">
+              <span className="font-medium">Kelly Priority</span>
+              <span className="text-xs">(Dispatch Score)</span>
+              <div className="group relative">
+                <Info className="h-3.5 w-3.5 cursor-help text-text-muted" />
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden w-72 rounded-lg bg-gray-900 p-3 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                  Adapted from the Kelly criterion (GraphAlpha f_kelly).
+                  Formula: (BMA_risk × confidence) − (1 − BMA_risk) / BMA_risk.
+                  Positive → dispatch first (high risk + high confidence).
+                  Near zero → dispatch second (moderate).
+                  Negative → hold (low risk or low confidence; likely false alarm).
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                region.kelly_priority > 0.3
+                  ? 'bg-risk-green/20 text-risk-green border border-risk-green/30'
+                  : region.kelly_priority > 0
+                    ? 'bg-risk-amber/20 text-risk-amber border border-risk-amber/30'
+                    : 'bg-risk-red/20 text-risk-red border border-risk-red/30'
+              }`}>
+                {region.kelly_priority > 0.3 ? 'Dispatch First' : region.kelly_priority > 0 ? 'Dispatch Second' : 'Hold'}
+              </span>
+              <span className={`font-mono font-semibold ${
+                region.kelly_priority > 0 ? 'text-risk-green' : region.kelly_priority > 0 ? 'text-risk-amber' : 'text-risk-red'
+              }`}>
+                {region.kelly_priority.toFixed(3)}
+              </span>
+            </div>
           </div>
+
+          {/* Expandable Detail Section */}
+          <details className="group">
+            <summary className="cursor-pointer text-xs text-text-muted hover:text-text-primary transition-colors">
+              View formula & interpretation
+            </summary>
+            <div className="mt-2 rounded-lg bg-surface-elevated p-3 text-xs text-text-secondary space-y-2">
+              <div>
+                <span className="font-medium text-text-primary">Vulnerability Multiplier</span>
+                <p className="mt-1">
+                  VM = 1.0 + (poverty × 0.40) + ((1 − road_access) × 0.25) + (pastoral × 0.20) + ((1 − health_access) × 0.15)
+                </p>
+                <p className="mt-0.5 text-text-muted">
+                  Applied as a multiplier on the raw BMA risk score. A region with VM=2.0 experiences roughly 2× the impact of the same hazard.
+                </p>
+              </div>
+              <div className="border-t border-border pt-2">
+                <span className="font-medium text-text-primary">Kelly Priority</span>
+                <p className="mt-1">
+                  Kelly = (BMA_risk × confidence) − (1 − BMA_risk) / BMA_risk
+                </p>
+                <p className="mt-0.5 text-text-muted">
+                  Derived from the GraphAlpha f_kelly formula. Positive scores indicate alerts where the expected benefit of dispatch outweighs the cost of false alarms. Negative scores suggest holding the alert pending confirmation.
+                </p>
+              </div>
+            </div>
+          </details>
         </div>
       </div>
     </div>

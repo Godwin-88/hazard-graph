@@ -4,14 +4,18 @@ HazardGraph — Full Real Data Pipeline Runner
 Triggers the complete data pipeline from real sources:
   1. Neo4j schema migration
   2. CHIRPS rainfall ingestion (real UCSB/CHC data)
-  3. ICPAC RSS ingestion (real ICPAC feed + Groq extraction)
-  4. WFP food price ingestion (real WFP VAM API)
-  5. IPC phase ingestion (real IPC API)
-  6. HMM climate regime detection
-  7. SDE rainfall simulation
-  8. VARLiNGAM causal discovery
-  9. Risk scoring + BMA + Kelly prioritisation
-  10. Advisory generation (Groq LLM)
+  3. WFP food price ingestion (real WFP VAM API)
+  4. IPC phase ingestion (real IPC API)
+  5. ICPAC RSS ingestion (real ICPAC feed + Groq extraction)
+  6. NASA POWER climate ingestion (no key required)
+  7. FAOSTAT food price index ingestion (no key required)
+  8. WFP/HDX NDVI greenness ingestion (no key required)
+  9. ACLED conflict ingestion (requires ACLED_API_KEY/ACLED_EMAIL)
+  10. HMM climate regime detection
+  11. SDE rainfall simulation
+  12. VARLiNGAM causal discovery
+  13. Risk scoring + BMA + Kelly prioritisation
+  14. Advisory generation (Groq LLM)
 
 Usage:
   docker compose exec app python scripts/run_pipeline.py
@@ -105,25 +109,41 @@ async def run_pipeline():
     from ingestion.icpac_rss_fetcher import ingest_icpac_rss as icpac_ingest
     await step("ICPAC RSS Ingestion", icpac_ingest(), timeout=180)
 
-    # 7. HMM Climate Regime Detection
+    # 7. NASA POWER Climate Ingestion (no key required)
+    from ingestion.nasa_power_fetcher import fetch_all_regions as nasa_ingest
+    await step("NASA POWER Climate Ingestion", nasa_ingest(), timeout=180)
+
+    # 8. FAOSTAT Food Price Index Ingestion (no key required)
+    from ingestion.faostat_fetcher import fetch_all_countries as faostat_ingest
+    await step("FAOSTAT Food Price Index Ingestion", faostat_ingest(), timeout=180)
+
+    # 9. WFP/HDX NDVI Greenness Ingestion (no key required)
+    from ingestion.ndvi_fetcher import fetch_all_regions as ndvi_ingest
+    await step("WFP/HDX NDVI Greenness Ingestion", ndvi_ingest(), timeout=180)
+
+    # 10. ACLED Conflict Ingestion (requires ACLED_API_KEY/ACLED_EMAIL)
+    from ingestion.acled_fetcher import fetch_conflict_data as acled_ingest
+    await step("ACLED Conflict Ingestion", acled_ingest(), timeout=180)
+
+    # 11. HMM Climate Regime Detection
     from regime.regime_updater import update_all_regimes
     await step("HMM Climate Regime Detection", update_all_regimes(), timeout=180)
 
-    # 8. SDE Rainfall Simulation
+    # 12. SDE Rainfall Simulation
     from models.stochastic.rainfall_sde import RainfallSDE
     async def run_sde():
         engine = RainfallSDE()
         return await engine.run_all_regions(neo4j_client)
     await step("SDE Rainfall Simulation", run_sde(), timeout=120)
 
-    # 9. Kalman Smoothing
+    # 13. Kalman Smoothing
     from models.filtering.kalman import KalmanSmoother
     async def run_kalman():
         smoother = KalmanSmoother()
         return await smoother.smooth_all()
     await step("Kalman Smoothing", run_kalman(), timeout=60)
 
-    # 10. VARLiNGAM Causal Discovery
+    # 14. VARLiNGAM Causal Discovery
     from causal.varlingam_engine import VARLiNGAMEngine
     from causal.time_series_assembler import assemble_panel
     from causal.edge_writer import write_causal_edges
@@ -153,14 +173,14 @@ async def run_pipeline():
         return {"total_edges": total_edges}
     await step("VARLiNGAM Causal Discovery", run_varlingam(), timeout=600)
 
-    # 11. Risk Scoring
+    # 15. Risk Scoring
     from risk.scoring_service import compute_risk_scores
     async def run_scoring():
         scores = await compute_risk_scores(neo4j_client)
         return {"regions_scored": len(scores)}
     await step("Compound Risk Scoring", run_scoring(), timeout=120)
 
-    # 12. BMA Ensemble
+    # 16. BMA Ensemble
     from models.ensemble.bma_engine import BMAEngine
     import json
 
@@ -186,7 +206,7 @@ async def run_pipeline():
         return {"regions_computed": len(bma_results)}
     await step("BMA Bayesian Ensemble", run_bma(), timeout=180)
 
-    # 13. Kelly Prioritisation
+    # 17. Kelly Prioritisation
     from models.ensemble.kelly_prioritiser import update_alert_kelly_scores
     async def run_kelly():
         scores = await compute_risk_scores(neo4j_client)
@@ -207,7 +227,7 @@ async def run_pipeline():
             return {"alerts_prioritised": count}
     await step("Kelly Prioritiser", run_kelly(), timeout=60)
 
-    # 14. Advisory Generation (Groq LLM)
+    # 18. Advisory Generation (Groq LLM)
     from alerts.advisory_generator import AdvisoryGenerator
     async def run_advisory():
         scores = await compute_risk_scores(neo4j_client)
@@ -222,7 +242,7 @@ async def run_pipeline():
             return {"alerts_generated": len(alert_ids)}
     await step("Advisory Generation (Groq LLM)", run_advisory(), timeout=180)
 
-    # 15. Cleanup
+    # 19. Cleanup
     await neo4j_client.close()
     await redis_client.close()
 
@@ -235,6 +255,10 @@ async def run_pipeline():
     print("  • WFP food prices from VAM API")
     print("  • IPC phases from IPC API")
     print("  • ICPAC RSS bulletins via Groq extraction")
+    print("  • NASA POWER climate data (no key required)")
+    print("  • FAOSTAT food price indices (no key required)")
+    print("  • WFP/HDX NDVI greenness (no key required)")
+    print("  • ACLED conflict events (when key configured)")
     print("  • HMM regimes detected from rainfall patterns")
     print("  • SDE simulations for drought/flood probabilities")
     print("  • VARLiNGAM causal edges discovered")

@@ -33,6 +33,22 @@ HDX_API_URL = "https://data.humdata.org/api/3/action/package_show"
 MAX_RETRIES = 3
 BASE_DELAY_S = 2.0
 
+# WFP NDVI is published per-country on HDX (not as a single global package).
+# Package IDs follow the pattern "{iso3}-ndvi-subnational".
+NDVI_PACKAGE_IDS = {
+    "ETH": "eth-ndvi-subnational",
+    "KEN": "ken-ndvi-subnational",
+    "SOM": "som-ndvi-subnational",
+    "SDN": "sdn-ndvi-subnational",
+    "SSD": "ssd-ndvi-subnational",
+    "UGA": "uga-ndvi-subnational",
+    "DJI": "dji-ndvi-subnational",
+    "ERI": "eri-ndvi-subnational",
+    "TZA": "tza-ndvi-subnational",
+    "BDI": "bdi-ndvi-subnational",
+    "RWA": "rwa-ndvi-subnational",
+}
+
 # Region → default NDVI baseline (0-1). Used for anomaly calc when we
 # only receive an absolute NDVI value, not a pre-computed anomaly.
 REGION_NDVI_BASELINE = {
@@ -50,15 +66,15 @@ REGION_NDVI_BASELINE = {
 }
 
 
-async def _find_ndvi_resource_url() -> Optional[str]:
+async def _find_ndvi_resource_url(package_id: str) -> Optional[str]:
     """Find a downloadable NDVI CSV resource URL from HDX.
 
-    Queries the HDX package_show API for the WFP NDVI dataset and picks
-    the first CSV resource. Returns the URL or None.
+    Queries the HDX package_show API for a single country's NDVI dataset
+    and picks the first CSV resource. Returns the URL or None.
     """
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            resp = await client.get(HDX_API_URL, params={"id": "wfp-ndvi"})
+            resp = await client.get(HDX_API_URL, params={"id": package_id})
             resp.raise_for_status()
             data = resp.json()
             resources = data.get("result", {}).get("resources", [])
@@ -68,7 +84,7 @@ async def _find_ndvi_resource_url() -> Optional[str]:
                     return res.get("url")
             return None
     except Exception as exc:
-        logger.warning("HDX NDVI resource lookup failed: %s", exc)
+        logger.warning("HDX NDVI resource lookup failed for %s: %s", package_id, exc)
         return None
 
 
@@ -159,31 +175,42 @@ async def fetch_all_regions() -> dict:
             url=settings.hdx_ndvi_url,
         )
 
-        csv_url = await _find_ndvi_resource_url()
-        if not csv_url:
-            logger.warning("No NDVI CSV resource found on HDX for WFP dataset")
-            return summary
+        # Countries to fetch come from settings (comma-separated ISO3), defaulting
+        # to the core IGAD set. Each country package is queried independently.
+        countries_raw = settings.ndvi_countries or "ETH,KEN,SOM,SDN"
+        countries = [c.strip().upper() for c in countries_raw.split(",") if c.strip()]
 
-        csv_text = await _download_csv(csv_url)
-        if not csv_text:
-            logger.warning("NDVI CSV download failed")
-            return summary
-
-        rows = _parse_ndvi_csv(csv_text)
-        if not rows:
-            logger.warning("No parseable NDVI rows found in CSV")
-            return summary
-
-        # Group by region, take the latest value per region
         latest_by_region: dict[str, dict] = {}
-        for row in rows:
-            region_id = _map_to_region(row["region"])
-            if not region_id:
+        for iso3 in countries:
+            package_id = NDVI_PACKAGE_IDS.get(iso3)
+            if not package_id:
+                logger.warning("No NDVI package ID mapped for %s — skipping", iso3)
                 continue
-            if region_id not in latest_by_region:
-                latest_by_region[region_id] = row
-            elif row["date"] > latest_by_region[region_id]["date"]:
-                latest_by_region[region_id] = row
+
+            csv_url = await _find_ndvi_resource_url(package_id)
+            if not csv_url:
+                logger.warning("No NDVI CSV resource found for %s (%s)", iso3, package_id)
+                continue
+
+            csv_text = await _download_csv(csv_url)
+            if not csv_text:
+                logger.warning("NDVI CSV download failed for %s", iso3)
+                continue
+
+            rows = _parse_ndvi_csv(csv_text)
+            if not rows:
+                logger.warning("No parseable NDVI rows found for %s", iso3)
+                continue
+
+            # Group by region, take the latest value per region
+            for row in rows:
+                region_id = _map_to_region(row["region"])
+                if not region_id:
+                    continue
+                if region_id not in latest_by_region:
+                    latest_by_region[region_id] = row
+                elif row["date"] > latest_by_region[region_id]["date"]:
+                    latest_by_region[region_id] = row
 
         for region_id, row in latest_by_region.items():
             summary["total"] += 1

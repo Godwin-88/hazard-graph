@@ -27,6 +27,8 @@ async def inspect_neo4j(neo4j_session):
         ("RainfallSignal", "MATCH (n:RainfallSignal) RETURN count(n) AS c"),
         ("FoodPriceSignal", "MATCH (n:FoodPriceSignal) RETURN count(n) AS c"),
         ("IPCPhaseSignal", "MATCH (n:IPCPhaseSignal) RETURN count(n) AS c"),
+        ("NDVISignal", "MATCH (n:NDVISignal) RETURN count(n) AS c"),
+        ("ConflictSignal", "MATCH (n:ConflictSignal) RETURN count(n) AS c"),
         ("ForecastSignal", "MATCH (n:ForecastSignal) RETURN count(n) AS c"),
         ("CausalEdge", "MATCH (n:CausalEdge) RETURN count(n) AS c"),
         ("StochasticSignal", "MATCH (n:StochasticSignal) RETURN count(n) AS c"),
@@ -155,6 +157,10 @@ async def inspect_redis():
         keys += await redis_client._redis.keys("chirps:*")
         keys += await redis_client._redis.keys("regime_posteriors:*")
         keys += await redis_client._redis.keys("wfp:*")
+        keys += await redis_client._redis.keys("nasa_power:*")
+        keys += await redis_client._redis.keys("faostat:*")
+        keys += await redis_client._redis.keys("ndvi:*")
+        keys += await redis_client._redis.keys("acled:*")
 
         if keys:
             for key in sorted(set(keys)):

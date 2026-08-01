@@ -50,6 +50,22 @@ ISO3_TO_REGION = {
     "RWA": "region_rwanda",
 }
 
+# FEWS NET country_code filter uses ISO 3166-1 alpha-2, NOT alpha-3.
+# ETH→ET, KEN→KE, SOM→SO, SDN→SD, etc.
+ISO3_TO_ALPHA2 = {
+    "ETH": "ET",
+    "KEN": "KE",
+    "SOM": "SO",
+    "SDN": "SD",
+    "SSD": "SS",
+    "UGA": "UG",
+    "DJI": "DJ",
+    "ERI": "ER",
+    "TZA": "TZ",
+    "BDI": "BI",
+    "RWA": "RW",
+}
+
 # ── FEWS NET JWT Token Cache ──────────────────────────────
 _fews_token: str | None = None
 _fews_token_expiry: float = 0.0
@@ -73,6 +89,7 @@ async def _get_fews_net_token() -> str | None:
         logger.warning("FEWS NET credentials not configured in .env")
         return None
 
+    # Auth lives at the ROOT of the FEWS NET API host, not under /api/
     auth_url = f"{settings.fews_net_base_url}/api-token-auth/"
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -92,14 +109,16 @@ async def _get_fews_net_token() -> str | None:
         return None
 
 
-async def _fetch_json_with_auth(url: str, token: str, timeout: int = 30) -> Optional[dict | list]:
-    """Fetch JSON from a URL using JWT Bearer auth with retry logic."""
+async def _fetch_json_with_auth(url: str, token: str = "", timeout: int = 30) -> Optional[dict | list]:
+    """Fetch JSON from a URL with retry logic.
+
+    Public FEWS NET IPC data works without auth. When a token is provided
+    it is sent as ``Authorization: JWT <token>``.
+    """
     async def _fetch():
+        headers = {"Authorization": f"JWT {token}"} if token else None
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            response = await client.get(
-                url,
-                headers={"Authorization": f"JWT {token}"},
-            )
+            response = await client.get(url, headers=headers)
             response.raise_for_status()
             return response.json()
 
@@ -107,7 +126,7 @@ async def _fetch_json_with_auth(url: str, token: str, timeout: int = 30) -> Opti
         try:
             return await _fetch()
         except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 401:
+            if exc.response.status_code == 401 and token:
                 # Token may have expired — clear cache and retry once
                 global _fews_token, _fews_token_expiry
                 _fews_token = None
@@ -136,11 +155,17 @@ async def _fetch_json_with_auth(url: str, token: str, timeout: int = 30) -> Opti
     return None
 
 
-async def _fetch_json(url: str, timeout: int = 30) -> Optional[dict]:
-    """Fetch JSON from a URL with retry logic (no auth)."""
+async def _fetch_json(url: str, timeout: int = 30, api_key: str = "") -> Optional[dict]:
+    """Fetch JSON from a URL with retry logic.
+
+    If an api_key is provided, sends it via the X-API-Key header
+    (required by https://api.ipcinfo.org). Without a key the IPC API
+    returns 401, so callers should skip the request entirely.
+    """
     async def _fetch():
+        headers = {"X-API-Key": api_key} if api_key else {}
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            response = await client.get(url)
+            response = await client.get(url, headers=headers or None)
             response.raise_for_status()
             return response.json()
 
@@ -167,11 +192,19 @@ async def _fetch_json(url: str, timeout: int = 30) -> Optional[dict]:
 async def fetch_from_ipc_api() -> list[dict]:
     """Try to fetch IPC data from the official IPC API.
 
+    Requires an API key (settings.ipc_api_key, register at ipcinfo.org).
+    Sent via the X-API-Key header. Without a key the API returns 401, so
+    we skip and let the caller fall back to FEWS NET.
+
     Returns list of phase data dicts with keys:
         iso3, phase, population_affected, reference_period
     """
+    if not settings.ipc_api_key:
+        logger.warning("IPC API key not configured — falling back to FEWS NET")
+        return []
+
     url = "https://api.ipcinfo.org/country?format=json"
-    data = await _fetch_json(url)
+    data = await _fetch_json(url, api_key=settings.ipc_api_key)
 
     if not data:
         return []
@@ -208,42 +241,60 @@ async def fetch_from_ipc_api() -> list[dict]:
 
 
 async def fetch_from_fews_net(iso3: str) -> Optional[dict]:
-    """Fetch IPC data from FEWS NET API for a single country using JWT auth.
+    """Fetch IPC phase data from FEWS NET API for a single country.
 
-    Uses the correct base URL: https://fdw.fews.net/api
-    Authenticates via POST to /api-token-auth/ then uses JWT Bearer token.
+    Correct endpoint: /api/ipcphase/  (NOT /api/ipc/ — that path is 404).
+    Correct country filter: ISO 3166-1 alpha-2  (KE, ET, SO, SD — not KEN, ETH...).
+    Public IPC data works without auth; a JWT token is used when configured.
     """
-    token = await _get_fews_net_token()
-    if not token:
-        logger.warning("No FEWS NET token available for %s", iso3)
+    alpha2 = ISO3_TO_ALPHA2.get(iso3)
+    if not alpha2:
+        logger.warning("No alpha-2 mapping for %s in FEWS NET country map", iso3)
         return None
 
-    # Try multiple possible endpoints for IPC phase data
+    # Token is optional — public IPC phase data is readable without auth.
+    token = await _get_fews_net_token()
+
+    # Query the last ~3 years so the time-series assembler gets 52+ rows.
+    now = datetime.now(timezone.utc)
+    start_date = now.replace(year=now.year - 3).strftime("%Y-%m-%d")
+
     endpoints = [
-        f"{settings.fews_net_base_url}/ipc/?format=json&country={iso3}",
-        f"{settings.fews_net_base_url}/ipcphase/?format=json&country={iso3}",
-        f"{settings.fews_net_base_url}/ipcclassification/?format=json&country={iso3}",
+        # Primary: area-level IPC phase classifications (official endpoint).
+        f"{settings.fews_net_base_url}/api/ipcphase/"
+        f"?format=json&country_code={alpha2}&scenario=CS"
+        f"&start_date={start_date}&fields=simple&page_size=200",
+        # Fallback: classification data-series list.
+        f"{settings.fews_net_base_url}/api/ipcclassification/"
+        f"?format=json&country_code={alpha2}&start_date={start_date}",
     ]
 
     for url in endpoints:
-        data = await _fetch_json_with_auth(url, token)
+        data = await _fetch_json_with_auth(url, token or "")
         if data:
-            # Parse the response — could be list or dict
+            # Parse the response — could be list or dict with "results"
             entries = data if isinstance(data, list) else data.get("results", data.get("data", [data]))
             if entries and len(entries) > 0:
                 entry = entries[0] if isinstance(entries, list) else entries
 
-                phase = entry.get("phase", entry.get("ipc_phase", entry.get("classification", entry.get("ipc", 0))))
+                phase = entry.get(
+                    "phase",
+                    entry.get("ipc_phase", entry.get("classification", entry.get("ipc", entry.get("phase_value", 0)))),
+                )
                 if isinstance(phase, str):
                     try:
                         phase = int(phase)
                     except ValueError:
                         phase = 0
 
-                population = entry.get("population_affected", entry.get("population", entry.get("affected_population", 0)))
+                population = entry.get(
+                    "population_affected",
+                    entry.get("population", entry.get("affected_population", 0)),
+                )
                 reference = entry.get(
                     "reference_date",
-                    entry.get("analysis_date", entry.get("date", str(datetime.now(timezone.utc).year))),
+                    entry.get("analysis_date",
+                        entry.get("date", entry.get("start_date", str(now.year)))),
                 )
 
                 logger.info("FEWS NET returned data for %s: Phase %d", iso3, phase)

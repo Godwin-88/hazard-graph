@@ -37,6 +37,18 @@ class AsyncDAGExecutor:
         self.errors: dict[str, Exception] = {}
         self.skipped: set[str] = set()
 
+    def _build_context(self) -> dict[str, Any]:
+        """Build a kwargs context mapping completed node results downstream.
+
+        Each completed node's result is exposed as ``{name}_results`` so
+        downstream nodes can consume the outputs of their dependencies
+        (e.g. a 'scoring' node result becomes ``scoring_results``).
+        """
+        context: dict[str, Any] = {}
+        for name, result in self.results.items():
+            context[f"{name}_results"] = result
+        return context
+
     def add_node(
         self,
         name: str,
@@ -112,6 +124,7 @@ class AsyncDAGExecutor:
         self.results = {}
         self.errors = {}
         self.skipped = set()
+        run_kwargs = dict(kwargs)
 
         total_nodes = len(self.nodes)
         executed_count = 0
@@ -149,11 +162,14 @@ class AsyncDAGExecutor:
                         name,
                     )
                     continue
-                tasks.append(self._run_node(name, node, **kwargs))
+                tasks.append(self._run_node(name, node, **run_kwargs))
 
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=False)
                 executed_count += len(tasks)
+
+            # Expose completed results to downstream batches
+            run_kwargs.update(self._build_context())
 
         logger.info(
             "Pipeline DAG complete: %d executed, %d skipped, %d errors",
@@ -165,7 +181,12 @@ class AsyncDAGExecutor:
         return self.results
 
     async def _run_node(self, name: str, node: DAGNode, **kwargs):
-        """Execute a single DAG node with timeout."""
+        """Execute a single DAG node with timeout.
+
+        ``kwargs`` may include results of previously completed nodes
+        (exposed as ``{name}_results``) so downstream nodes can consume
+        their dependency outputs.
+        """
         start = datetime.now(timezone.utc)
         logger.info("Starting node '%s' (timeout=%ds)", name, node.timeout_seconds)
 

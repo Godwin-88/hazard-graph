@@ -5,8 +5,7 @@ const API_BASE = '/api/v1';
 
 async function fetchAlerts(status?: string) {
   const params = status ? `?status=${status}` : '';
-  // Use trailing slash to prevent FastAPI 307 redirect which drops auth headers
-  return fetchJson(`${API_BASE}/alerts/${params}`);
+  return fetchJson(`${API_BASE}/alerts${params}`);
 }
 
 async function approveAlert(id: string, messageText: string) {

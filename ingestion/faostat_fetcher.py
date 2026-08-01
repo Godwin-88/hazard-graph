@@ -26,12 +26,17 @@ from graph.lineage import record_lineage, update_data_source_stats
 logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────
-FAOSTAT_BASE_URL = "https://fenixservices.fao.org/faostat/api/v1/en/data"
+# Stable base URL (fenixservices.fao.org is legacy/unstable → Cloudflare 521).
+# Consumer Price Indices domain code is "CP".
+FAOSTAT_BASE_URL = "https://faostatservices.fao.org/api/v1/en/data/CP"
 SOURCE_NAME = "FAOSTAT Food Price Indices"
 SOURCE_ID = make_data_source_id(SOURCE_NAME)
 
 MAX_RETRIES = 3
 BASE_DELAY_S = 2.0
+
+# Split timeouts: fail fast on connect (dead origin → 521), allow longer reads.
+FAOSTAT_TIMEOUT = httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=5.0)
 
 # ISO3 → region_id mapping (matches ipc_fetcher)
 ISO3_TO_REGION = {
@@ -62,15 +67,15 @@ async def _fetch_price_index(country_code: str, item_code: int, year: int) -> Op
     Returns the latest available index, or None on failure.
     """
     params = {
-        "area_cs": country_code,
-        "item_cs": item_code,
-        "element_cs": 5531,  # Producer Price Index
+        "area": country_code,          # ETH, KEN, SOM, SDN
+        "element": 5531,               # Producer Price Index
         "year": year,
         "show_code": True,
+        "output_type": "objects",      # returns list of dicts
     }
 
     async def _fetch():
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=FAOSTAT_TIMEOUT, follow_redirects=True) as client:
             response = await client.get(FAOSTAT_BASE_URL, params=params)
             response.raise_for_status()
             return response.json()

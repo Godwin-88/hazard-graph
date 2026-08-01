@@ -44,6 +44,131 @@ async def run_migration(neo4j_session):
                 print(f"  Migration warning: {e}")
 
 
+async def seed_historical_signals(neo4j_session):
+    """Backfill ~2 years (104 weeks) of signal history per region.
+
+    This is what makes assemble_panel() return 52+ rows so the HMM,
+    VARLiNGAM and risk-scoring stages have real time-series to work
+    with. Creates RainfallSignal, FoodPriceSignal, IPCPhaseSignal and
+    StochasticSignal nodes with weekly dates linked via MEASURED_IN.
+    """
+    regions = [
+        ('region_somalia', 'SOM', -2.0, 0.85, 4),
+        ('region_south_sudan', 'SSD', -1.6, 0.78, 4),
+        ('region_ethiopia', 'ETH', -1.5, 0.72, 4),
+        ('region_sudan', 'SDN', -0.9, 0.60, 3),
+        ('region_kenya', 'KEN', -1.1, 0.55, 3),
+        ('region_djibouti', 'DJI', -0.7, 0.40, 3),
+        ('region_eritrea', 'ERI', -0.6, 0.45, 3),
+        ('region_uganda', 'UGA', 0.4, 0.20, 2),
+        ('region_tanzania', 'TZA', 0.6, 0.30, 2),
+        ('region_rwanda', 'RWA', 0.3, 0.15, 2),
+        ('region_burundi', 'BDI', -0.2, 0.35, 2),
+    ]
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    total = 0
+    for region_id, iso3, base_spi, base_risk, base_phase in regions:
+        # Commodity price index levels per region (stable, near-constant)
+        base_price = 100.0 + (base_risk * 50.0)
+        # Weekly SPI evolution — slow drift so HMM/VARLiNGAM see structure
+        for week in range(0, 104):
+            week_date = now - datetime.timedelta(weeks=(103 - week))
+            date_str = week_date.strftime("%Y-%m-%d")
+
+            # SPI eases slowly from drought → baseline over 2 years
+            progress = week / 103.0
+            spi = base_spi * (1.0 - 0.7 * progress) + 0.6 * (0.5 - progress)
+            spi = round(spi, 4)
+
+            # RainfallSignal
+            rs_id = f"rs_hist_{region_id}_{week}"
+            await neo4j_session.run(
+                """MERGE (rs:RainfallSignal {id: $id})
+                   SET rs.spi_30d = $spi,
+                       rs.spi_30d_smoothed = $spi_s,
+                       rs.anomaly_pct = $anom,
+                       rs.dekad = 'W1',
+                       rs.date = $date,
+                       rs.region_id = $rid
+                   WITH rs
+                   MATCH (reg:Region {id: $rid})
+                   MERGE (rs)-[:MEASURED_IN]->(reg)""",
+                id=rs_id,
+                spi=spi,
+                spi_s=round(spi * 0.97, 4),
+                anom=round(spi / 3.0, 4),
+                date=date_str,
+                rid=region_id,
+            )
+
+            # FoodPriceSignal (pct_change computed vs previous week)
+            price = base_price + (1.0 - progress) * 8.0
+            prev_price = base_price + (1.0 - (max(progress - 1/103, 0))) * 8.0
+            pct_change = ((price - prev_price) / prev_price) * 100.0 if prev_price else 0.0
+            fps_id = f"fp_hist_{region_id}_{week}"
+            await neo4j_session.run(
+                """MERGE (fps:FoodPriceSignal {id: $id})
+                   SET fps.commodity = 'maize',
+                       fps.market = $rid,
+                       fps.price_usd = $price,
+                       fps.pct_change_30d = $pct,
+                       fps.date = $date,
+                       fps.region_id = $rid
+                   WITH fps
+                   MATCH (reg:Region {id: $rid})
+                   MERGE (fps)-[:MEASURED_IN]->(reg)""",
+                id=fps_id,
+                price=round(price, 2),
+                pct=round(pct_change, 4),
+                date=date_str,
+                rid=region_id,
+            )
+
+            # IPCPhaseSignal
+            ipc_id = f"ipc_hist_{region_id}_{week}"
+            ipc_phase = max(1, min(5, round(base_phase + spi * 0.8)))
+            await neo4j_session.run(
+                """MERGE (ipc:IPCPhaseSignal {id: $id})
+                   SET ipc.phase = $phase,
+                       ipc.population_affected = $pop,
+                       ipc.reference_date = $date,
+                       ipc.region_id = $rid
+                   WITH ipc
+                   MATCH (reg:Region {id: $rid})
+                   MERGE (ipc)-[:MEASURED_IN]->(reg)""",
+                id=ipc_id,
+                phase=ipc_phase,
+                pop=int(200000 * (1.0 + base_risk * 3.0) * (1.0 - 0.3 * progress)),
+                date=date_str,
+                rid=region_id,
+            )
+
+            # StochasticSignal
+            ss_id = f"ss_hist_{region_id}_{week}"
+            p_drought = max(0.001, min(0.95, (-spi + 1.0) / 3.0))
+            p_flood = max(0.001, min(0.95, (spi + 1.0) / 3.0))
+            await neo4j_session.run(
+                """MERGE (ss:StochasticSignal {id: $id})
+                   SET ss.p_drought_4w = $pd,
+                       ss.p_flood_4w = $pf,
+                       ss.region_id = $rid,
+                       ss.date = $date
+                   WITH ss
+                   MATCH (reg:Region {id: $rid})
+                   MERGE (ss)-[:MEASURED_IN]->(reg)""",
+                id=ss_id,
+                pd=round(p_drought, 4),
+                pf=round(p_flood, 4),
+                date=date_str,
+                rid=region_id,
+            )
+
+            total += 4
+
+    print(f"  Backfilled {total} historical signal nodes (104 weeks x 11 regions x 4 types)")
+
+
 async def seed_neo4j(neo4j_session):
     """Seed realistic risk signals into Neo4j."""
     # Realistic demo data representing July 2026 Horn of Africa situation
@@ -291,13 +416,14 @@ async def seed_analytics_backfill(postgres_session):
             # Insert into alert_responses table directly
             await postgres_session.execute(
                 text(
-                    """INSERT INTO alert_responses (id, alert_id, response_type, responded_at)
-                       VALUES (gen_random_uuid(), :aid, :rtype, :rdate)"""
+                    """INSERT INTO alert_responses (id, alert_id, response_type, responded_at, created_at)
+                       VALUES (gen_random_uuid(), :aid, :rtype, :rdate, :cdate)"""
                 ),
                 {
                     "aid": str(alert.id),
                     "rtype": resp_type,
                     "rdate": dispatched_at + datetime.timedelta(hours=1 + j),
+                    "cdate": dispatched_at + datetime.timedelta(hours=1 + j),
                 },
             )
         created += 1
@@ -333,20 +459,27 @@ async def seed():
         await seed_neo4j(session)
     print("  Done.")
 
-    # 5. Seed PostgreSQL data
+    # 5. Backfill 2 years of historical signal series (powers HMM/VARLiNGAM)
+    print("Backfilling historical signal time series...")
+    async with neo4j_client.get_session() as session:
+        await seed_historical_signals(session)
+    print("  Done.")
+
+    # 6. Seed PostgreSQL data
     print("Seeding PostgreSQL alerts...")
     async with async_session_factory() as pg_session:
         await seed_postgres(pg_session)
         await seed_analytics_backfill(pg_session)
     print("  Done.")
 
-    # 6. Close connections
+    # 7. Close connections
     await neo4j_client.close()
 
     print()
     print("✅ Demo data seeded successfully!")
     print("   Somalia, South Sudan, Ethiopia showing high risk (>80)")
     print("   Causal edges written for high-risk regions")
+    print("   Historical signal series backfilled (104 weeks x 4 types x 11 regions)")
     print("   5 pending alerts ready for approval demo")
     print()
     print("   Refresh the dashboard at http://localhost:8000")

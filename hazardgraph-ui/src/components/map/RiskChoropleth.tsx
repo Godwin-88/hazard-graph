@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { MapContainer, TileLayer, GeoJSON, CircleMarker, useMap, Tooltip } from 'react-leaflet'
 import L from 'leaflet'
 import type { RegionRiskScore } from '@/types'
@@ -19,10 +19,14 @@ function getScoreColor(score: number): string {
 }
 
 function getScoreOpacity(score: number): number {
-  if (score < 30) return 0.6
-  if (score < 60) return 0.65
-  if (score < 75) return 0.7
-  return 0.75
+  if (score < 30) return 0.12
+  if (score < 60) return 0.14
+  if (score < 75) return 0.16
+  return 0.18
+}
+
+function getMarkerRadius(score: number): number {
+  return Math.max(5, Math.min(22, 5 + (score / 100) * 17))
 }
 
 function MapBoundsSetter() {
@@ -65,6 +69,24 @@ export function RiskChoropleth({ regions, clusters = [], onRegionClick }: RiskCh
     regionMap.set(r.name.toLowerCase(), r)
   })
 
+  const regionCentroids = useMemo(() => {
+    if (!geoJsonData) return []
+    const features = (geoJsonData as unknown) as GeoJSON.FeatureCollection
+    return features.features
+      .filter((f): f is GeoJSON.Feature => f.type === 'Feature')
+      .map((f) => {
+        const props = f.properties as Record<string, unknown>
+        const name = (props.name as string) || ''
+        const region = regionMap.get(name.toLowerCase())
+        if (!region) return null
+        const centroidLat = props.centroid_lat as number | undefined
+        const centroidLon = props.centroid_lon as number | undefined
+        if (centroidLat == null || centroidLon == null) return null
+        return { name, lat: centroidLat, lon: centroidLon, region }
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null)
+  }, [geoJsonData, regions])
+
   const onEachFeature = (feature: Record<string, unknown>, layer: L.Layer) => {
     const props = feature.properties as Record<string, unknown>
     const name = (props.name as string) || ''
@@ -78,9 +100,9 @@ export function RiskChoropleth({ regions, clusters = [], onRegionClick }: RiskCh
       geoLayer.setStyle({
         fillColor: color,
         fillOpacity: opacity,
-        weight: 1,
-        color: '#374151',
-        opacity: 0.8,
+        weight: 1.5,
+        color: '#6B7280',
+        opacity: 0.7,
       })
 
       geoLayer.on({
@@ -146,6 +168,30 @@ export function RiskChoropleth({ regions, clusters = [], onRegionClick }: RiskCh
             onEachFeature={onEachFeature as never}
           />
         )}
+        {regionCentroids.map(({ name, lat, lon, region }) => {
+          const color = getScoreColor(region.score)
+          const radius = getMarkerRadius(region.score)
+          return (
+            <CircleMarker
+              key={name}
+              center={[lat, lon]}
+              radius={radius}
+              pathOptions={{
+                fillColor: color,
+                fillOpacity: 0.85,
+                color,
+                weight: 1.5,
+                opacity: 0.9,
+              }}
+            >
+              <Tooltip>
+                <div style={{ fontFamily: 'Raleway, sans-serif', color: '#F9FAFB', fontSize: '12px' }}>
+                  <strong>{name}</strong><br />Score: {region.score.toFixed(0)}
+                </div>
+              </Tooltip>
+            </CircleMarker>
+          )
+        })}
         {clusters.map((cluster, idx) => (
           <CircleMarker
             key={cluster.id}

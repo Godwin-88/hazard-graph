@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Alert } from '../../hooks/useAlerts';
 import { useApproveAlert, useRejectAlert, useDispatchAlert } from '../../hooks/useAlerts';
 import { RegimeBadge } from '../shared/RegimeBadge';
@@ -18,6 +18,10 @@ export function AlertApprovalDialog({ alert, onClose }: AlertApprovalDialogProps
   const [rejectionReason, setRejectionReason] = useState('Inaccurate information');
   const [showRejectionInput, setShowRejectionInput] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  useEffect(() => {
+    setMessageText(alert?.message_text || '');
+  }, [alert]);
 
   if (!alert) return null;
 
@@ -65,6 +69,14 @@ export function AlertApprovalDialog({ alert, onClose }: AlertApprovalDialogProps
       setTimeout(onClose, 1000);
     } catch {
       showToast('error', 'Failed to reject alert');
+    }
+  };
+
+  const handleRejectToggle = () => {
+    if (showRejectionInput) {
+      handleReject();
+    } else {
+      setShowRejectionInput(true);
     }
   };
 
@@ -206,7 +218,7 @@ export function AlertApprovalDialog({ alert, onClose }: AlertApprovalDialogProps
               {dispatchMutation.isPending ? <LoadingSpinner size="sm" /> : 'Dispatch Now'}
             </button>
             <button
-              onClick={() => setShowRejectionInput(!showRejectionInput)}
+              onClick={handleRejectToggle}
               disabled={rejectMutation.isPending}
               className="flex-1 rounded-lg bg-red-500/20 px-4 py-2 text-sm font-semibold text-red-400 hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-50"
             >

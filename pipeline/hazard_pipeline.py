@@ -18,36 +18,72 @@ async def build_pipeline(
 ) -> AsyncDAGExecutor:
     """Build and return the full HazardGraph ML pipeline DAG.
 
-    DAG structure:
-      chirps_ingest     ─┐
-      wfp_ingest        ─┤→ kalman_smooth → sde_simulate ─┐
-      ipc_ingest        ─┘                                 │
-      icpac_ingest ────────→ hmm_update   ─────────────────┤
-                                                           │
-      varlingam_discover ─────────────────────────────────→┤
-                                                           ↓
-                                                 bma_compute
-                                                           ↓
-                                                 kelly_prioritise
-                                                           ↓
-                                                 advisory_generate
-                                                           ↓
-                                                 (await approval)
-                                                           ↓
-                                                 sms_dispatch
+    Core ingestion sources wired into the DAG:
+      chirps (CHIRPS rainfall)  ─┐
+      wfp    (WFP food prices)  ─┤→ kalman_smooth → sde_simulate ─┐
+      ipc    (IPC phases)       ─┘                                 │
+      icpac  (ICPAC RSS alerts) ───────→ hmm_update  ──────────────┤
+                                                                   │
+      varlingam_discover ─────────────────────────────────────────→┤
+                                                                   ↓
+                                                         bma_compute
+                                                                   ↓
+                                                         kelly_prioritise
+                                                                   ↓
+                                                         advisory_generate
+                                                                   ↓
+                                                         (await approval)
+                                                                   ↓
+                                                         sms_dispatch
+
+    Additional real-data fetchers (NASA POWER climate, FAOSTAT food
+    price indices, WFP/HDX NDVI, ACLED conflict) run as scheduled jobs
+    via scheduler/jobs.py and write their own signal nodes, which the
+    scoring node's Neo4j query consumes through OPTIONAL MATCH.
     """
     dag = AsyncDAGExecutor()
 
     # ── Ingestion nodes (batch 0 — no dependencies) ────────
+    # Wrap in defensive handlers so a transient network / API failure
+    # logs a warning and returns an empty summary rather than being
+    # recorded as a hard node error (which cascades to downstream skips).
     from ingestion.chirps_fetcher import fetch_all_regions as chirps_fn
     from ingestion.wfp_fetcher import fetch_all_countries as wfp_fn
     from ingestion.ipc_fetcher import fetch_all_countries as ipc_fn
     from ingestion.icpac_rss_fetcher import ingest_icpac_rss as icpac_fn
 
-    dag.add_node("chirps", chirps_fn, timeout_seconds=120)
-    dag.add_node("wfp", wfp_fn, timeout_seconds=60)
-    dag.add_node("ipc", ipc_fn, timeout_seconds=60)
-    dag.add_node("icpac", icpac_fn, timeout_seconds=60)
+    async def chirps_wrapper(**kwargs):
+        try:
+            return await chirps_fn()
+        except Exception as exc:
+            logger.warning("chirps ingestion failed (continuing): %s", exc)
+            return {"written": 0, "skipped": True}
+
+    async def wfp_wrapper(**kwargs):
+        try:
+            return await wfp_fn()
+        except Exception as exc:
+            logger.warning("wfp ingestion failed (continuing): %s", exc)
+            return {"written": 0, "skipped": True}
+
+    async def ipc_wrapper(**kwargs):
+        try:
+            return await ipc_fn()
+        except Exception as exc:
+            logger.warning("ipc ingestion failed (continuing): %s", exc)
+            return {"written": 0, "skipped": True}
+
+    async def icpac_wrapper(**kwargs):
+        try:
+            return await icpac_fn()
+        except Exception as exc:
+            logger.warning("icpac ingestion failed (continuing): %s", exc)
+            return {"written": 0, "skipped": True}
+
+    dag.add_node("chirps", chirps_wrapper, timeout_seconds=120)
+    dag.add_node("wfp", wfp_wrapper, timeout_seconds=60)
+    dag.add_node("ipc", ipc_wrapper, timeout_seconds=60)
+    dag.add_node("icpac", icpac_wrapper, timeout_seconds=60)
 
     # ── Processing nodes (batch 1 — depend on ingestion) ───
     from models.filtering.kalman import KalmanSmoother

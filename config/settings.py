@@ -39,10 +39,13 @@ class Settings(BaseSettings):
     at_env: str = "sandbox"
     at_sender: str = "HAZARDGRPH"
 
-    # FEWS NET
+    # IPC acute food insecurity API (register at ipcinfo.org for a key)
+    ipc_api_key: str = ""
+
+    # FEWS NET Data Warehouse — auth is at the ROOT, data under /api/
     fews_net_username: str = ""
     fews_net_password: str = ""
-    fews_net_base_url: str = "https://fdw.fews.net/api"
+    fews_net_base_url: str = "https://fdw.fews.net"
 
     # WFP DataBridges
     wfp_client_id: str = ""
@@ -53,8 +56,9 @@ class Settings(BaseSettings):
     acled_email: str = ""
     acled_base_url: str = "https://api.acleddata.com/acled/read"
 
-    # HDX / WFP NDVI (open, no key)
+    # HDX / WFP NDVI — per-country packages (e.g. eth-ndvi-subnational)
     hdx_ndvi_url: str = "https://data.humdata.org/dataset/wfp-ndvi"
+    ndvi_countries: str = "ETH,KEN,SOM,SDN"
 
     # JWT
     jwt_secret_key: str = "change-this-to-a-32-char-minimum-secret"
