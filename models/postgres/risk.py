@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     DateTime,
     Index,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -23,7 +24,12 @@ from db.postgres_client import Base
 class RiskHistory(Base):
     __tablename__ = "risk_history"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
     region_id = Column(String(100), nullable=False, index=True)
     score = Column(Float, nullable=False)
     delta = Column(Float, nullable=False, default=0.0)

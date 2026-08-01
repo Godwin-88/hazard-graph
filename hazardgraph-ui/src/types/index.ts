@@ -54,8 +54,9 @@ export interface GraphEdge {
 export interface RegimeInfo {
   id: string
   name: string
-  region_id: string
-  posterior: number
+  country: string
+  current_regime: string
+  posteriors: Record<string, number>
 }
 
 export interface LSTMForecast {

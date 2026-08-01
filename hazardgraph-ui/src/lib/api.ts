@@ -62,6 +62,22 @@ export async function fetchRegimes(): Promise<{ regions: RegimeInfo[] }> {
   return fetchJson<{ regions: RegimeInfo[] }>(`${BASE_URL}/api/v1/graph/regimes`)
 }
 
+export interface CausalEdge {
+  id: string
+  source_variable: string
+  target_variable: string
+  weight: number
+  lag_weeks: number
+  p_value: number
+  region_id: string
+  method: string
+  discovered_at: string
+}
+
+export async function fetchCausalEdges(): Promise<CausalEdge[]> {
+  return fetchJson<CausalEdge[]>(`${BASE_URL}/api/v1/graph/causal-edges`)
+}
+
 export async function triggerScoring(): Promise<RiskScoresResponse> {
   const res = await fetch(`${BASE_URL}/api/v1/risk/trigger-scoring`, {
     method: 'POST',
@@ -135,4 +151,71 @@ export async function refreshClusters(): Promise<{ status: string; cluster_count
 
 export async function fetchTemporalGraph(): Promise<{ snapshots: TemporalSnapshot[] }> {
   return fetchJson<{ snapshots: TemporalSnapshot[] }>(`${BASE_URL}/api/v1/scenarios/temporal-graph`)
+}
+
+// ── Pipeline / Model Runner ─────────────────────────────
+
+export interface PipelineModel {
+  name: string
+  label: string
+  layer: string
+  last_status: string
+  last_finished_at: string | null
+  last_records: number | null
+}
+
+export interface JobRunRecord {
+  id: string
+  job_name: string
+  status: string
+  started_at: string | null
+  finished_at: string | null
+  duration_seconds: number | null
+  records_processed: number | null
+  error_message: string | null
+}
+
+export async function fetchPipelineStatus(): Promise<{ models: PipelineModel[] }> {
+  return fetchJson<{ models: PipelineModel[] }>(`${BASE_URL}/api/v1/pipeline/status`)
+}
+
+export async function fetchJobHistory(): Promise<{ jobs: JobRunRecord[] }> {
+  return fetchJson<{ jobs: JobRunRecord[] }>(`${BASE_URL}/api/v1/pipeline/jobs`)
+}
+
+export async function runPipelineScope(
+  scope: 'full' | 'scoring' | 'models',
+  models?: string[],
+): Promise<{ run_id: string; status: string; scope?: string; message?: string; runs?: { model: string; run_id: string; label: string }[] }> {
+  const res = await fetch(`${BASE_URL}/api/v1/pipeline/run`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(models ? { scope, models } : { scope }),
+  })
+  if (!res.ok) throw new Error(`Pipeline run failed: ${res.status}`)
+  return res.json()
+}
+
+export async function runSingleModel(
+  name: string,
+): Promise<{ run_id: string; status: string; model: string; label: string }> {
+  const res = await fetch(`${BASE_URL}/api/v1/pipeline/models/${name}`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  })
+  if (!res.ok) throw new Error(`Model run failed: ${res.status}`)
+  return res.json()
+}
+
+export async function sendAssistantMessage(
+  message: string,
+  context?: string,
+): Promise<{ reply: string }> {
+  const res = await fetch(`${BASE_URL}/api/v1/assistant/chat`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ message, context }),
+  })
+  if (!res.ok) throw new Error(`Assistant request failed: ${res.status}`)
+  return res.json()
 }

@@ -70,6 +70,16 @@ class RedisClient:
             logger.warning("Redis SET failed for key=%s: %s", key, exc)
             return False
 
+    async def delete(self, *keys: str) -> int:
+        """Delete one or more keys. Returns number of keys removed."""
+        if self._redis is None:
+            return 0
+        try:
+            return await self._redis.delete(*keys)
+        except Exception as exc:
+            logger.warning("Redis DELETE failed for keys=%s: %s", keys, exc)
+            return 0
+
     async def health_check(self) -> dict:
         """Check Redis connectivity and return hit rate info."""
         connected = False

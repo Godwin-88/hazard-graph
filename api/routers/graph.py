@@ -18,15 +18,84 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["graph"])
 
 
+def _infer_node_type(props: dict) -> str:
+    """Infer a node type from its properties when labels are missing.
+
+    Safety net so nodes are never reported as "Unknown" even if the
+    driver returns plain dicts without label metadata. Covers every
+    node label defined in migrations/001_schema.cypher and node_writers.
+    """
+    if "severity_level" in props:
+        return "HazardRegime"
+    if "spi_30d" in props or "anomaly_pct" in props or "dekad" in props:
+        return "RainfallSignal"
+    if "price_usd" in props or "pct_change_30d" in props or "commodity" in props:
+        return "FoodPriceSignal"
+    if "phase" in props and "population_affected" in props:
+        return "IPCPhaseSignal"
+    if "country" in props or "admin_level" in props or "current_risk_score" in props:
+        return "Region"
+    if "source_variable" in props and "target_variable" in props:
+        return "CausalEdge"
+    if "hazard_type" in props and "severity" in props:
+        return "ForecastSignal"
+    if "p_crisis" in props or "shap" in props:
+        return "MLForecast"
+    if "category" in props or "name" in props and "hazard" in str(props.get("id", "")).lower():
+        return "HazardType"
+    if "lead_time_days" in props or "description" in props and "strategy" in str(props.get("id", "")).lower():
+        return "InterventionStrategy"
+    if "url" in props or "ingested_at" in props or "record_count" in props:
+        return "DataSource"
+    if "message_text" in props or "risk_score_at_trigger" in props:
+        return "Alert"
+    if "member_count" in props or "label" in props and "cluster" in str(props.get("id", "")).lower():
+        return "HazardCluster"
+    if "score" in props and "model" in str(props.get("id", "")).lower():
+        return "BMAScore"
+    return "Unknown"
+
+
 def _transform_node(record: dict) -> dict:
-    """Transform a Neo4j node record to frontend-friendly format."""
+    """Transform a Neo4j node record to frontend-friendly format.
+
+    Handles both real driver Node objects (returned by record.data())
+    and plain dict fallbacks. The Neo4j async driver exposes labels and
+    element_id as attributes, not dict keys. A property-based type
+    inference fallback guarantees nodes are never "Unknown".
+    """
     n = record.get("n", record)
-    labels = list(n.get("labels", n.get("_labels", ["Unknown"])))
-    props = {k: v for k, v in n.items() if k not in ("labels", "_labels", "_id")}
-    node_type = labels[0] if labels else "Unknown"
+    if not n:
+        return None
+
+    # Case 1: real driver Node object — labels/element_id are attributes.
+    # Guard against a "Unknown" sentinel label so the property-based
+    # inference still runs when the node has no real labels.
+    if hasattr(n, "labels") and hasattr(n, "element_id"):
+        labels = [lb for lb in n.labels if lb and lb != "Unknown"]
+        props = dict(getattr(n, "_properties", {}) or {})
+        node_type = labels[0] if labels else _infer_node_type(props)
+        node_id = props.get("id") or n.element_id
+        label = props.get("name") or props.get("title") or node_type
+        return {
+            "id": str(node_id),
+            "label": str(label),
+            "type": node_type,
+            "properties": props,
+        }
+
+    # Case 2: plain dict — labels/elementId may be keys or absent.
+    # If labels resolve to ["Unknown"], fall through to property-based
+    # inference instead of reporting the sentinel unchanged.
+    props = {k: v for k, v in n.items() if k not in ("labels", "_labels", "_id", "elementId")}
+    raw_labels = n.get("labels", n.get("_labels", ["Unknown"]))
+    labels = [lb for lb in raw_labels if lb and lb != "Unknown"]
+    node_type = labels[0] if labels else _infer_node_type(props)
+    node_id = props.get("id") or n.get("elementId") or n.get("_id") or str(id(n))
+    label = props.get("name") or props.get("title") or node_type
     return {
-        "id": props.get("id", n.get("elementId", str(id(n)))),
-        "label": props.get("name", props.get("title", labels[0] if labels else "Node")),
+        "id": str(node_id),
+        "label": str(label),
         "type": node_type,
         "properties": props,
     }
@@ -75,14 +144,23 @@ def _transform_edge(record: dict) -> Optional[dict]:
 async def get_all_nodes():
     """Return all active nodes + edges for graph visualisation.
 
-    Cached in Redis for 5 minutes.
+    Cached in Redis for 5 minutes. Cache key is versioned (v2) so any
+    stale pre-fix "Unknown" data cached under the old key is ignored.
     """
-    cached = await redis_client.get("graph:nodes")
+    cached = await redis_client.get("graph:nodes:v2")
     if cached:
         try:
             return json.loads(cached)
         except Exception:
             pass
+
+    # Fresh data computed below; drop stale cached copy that may contain
+    # pre-fix "Unknown" node types / mismatched ids.
+    try:
+        await redis_client.delete("graph:nodes:v2")
+        await redis_client.delete("graph:edges:v2")
+    except Exception as exc:
+        logger.warning("Failed to clear stale graph cache: %s", exc)
 
     query = """
     MATCH (n) WHERE n.active IS NULL OR n.active <> false
@@ -102,12 +180,14 @@ async def get_all_nodes():
         # Add source node
         if "n" in record and record["n"]:
             node = _transform_node({"n": record["n"]})
-            nodes_map[node["id"]] = node
+            if node:
+                nodes_map[node["id"]] = node
 
         # Add target node
         if "m" in record and record["m"]:
             node = _transform_node({"n": record["m"]})
-            nodes_map[node["id"]] = node
+            if node:
+                nodes_map[node["id"]] = node
 
         # Add edge
         if "r" in record and record["r"]:
@@ -118,7 +198,7 @@ async def get_all_nodes():
     response = {"nodes": list(nodes_map.values()), "edges": edges}
 
     try:
-        await redis_client.set("graph:nodes", json.dumps(response, default=str), ttl=300)
+        await redis_client.set("graph:nodes:v2", json.dumps(response, default=str), ttl=300)
     except Exception as exc:
         logger.warning("Failed to cache graph nodes: %s", exc)
 
@@ -129,9 +209,10 @@ async def get_all_nodes():
 async def get_all_edges():
     """Return all active edges for graph visualisation.
 
-    Cached in Redis for 5 minutes.
+    Cached in Redis for 5 minutes. Cache key is versioned (v2) so any
+    stale pre-fix data cached under the old key is ignored.
     """
-    cached = await redis_client.get("graph:edges")
+    cached = await redis_client.get("graph:edges:v2")
     if cached:
         try:
             return json.loads(cached)
@@ -157,7 +238,7 @@ async def get_all_edges():
                 edges.append(edge)
 
     try:
-        await redis_client.set("graph:edges", json.dumps(edges, default=str), ttl=300)
+        await redis_client.set("graph:edges:v2", json.dumps(edges, default=str), ttl=300)
     except Exception as exc:
         logger.warning("Failed to cache graph edges: %s", exc)
 
@@ -199,7 +280,8 @@ async def get_region_subgraph(region_id: str):
         # Process nodes in path
         for node in path.get("nodes", []):
             node_data = _transform_node({"n": node})
-            nodes_map[node_data["id"]] = node_data
+            if node_data:
+                nodes_map[node_data["id"]] = node_data
 
         # Process relationships in path
         for rel in path.get("relationships", []):
@@ -368,7 +450,8 @@ async def get_causal_chain(region_id: str, hazard_type: str):
         chain_nodes = []
         for node in path.get("nodes", []):
             node_data = _transform_node({"n": node})
-            chain_nodes.append(node_data)
+            if node_data:
+                chain_nodes.append(node_data)
 
         cumulative_weight = sum(abs(w) for w in weights) if weights else 0.0
 

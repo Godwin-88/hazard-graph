@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config.settings import settings
 from db.neo4j_client import neo4j_client
-from db.postgres_client import create_all_tables, close_postgres
+from db.postgres_client import create_all_tables, ensure_schema_migrations, close_postgres
 from db.redis_client import redis_client
 from graph.schema_validator import validate_schema
 from scheduler.jobs import register_jobs, start_scheduler, stop_scheduler
@@ -46,6 +46,7 @@ async def lifespan(app: FastAPI):
     # 2. Create PostgreSQL tables
     try:
         await create_all_tables()
+        await ensure_schema_migrations()
         logger.info("PostgreSQL tables created/verified")
     except Exception as exc:
         logger.error("PostgreSQL table creation failed: %s", exc)
@@ -172,6 +173,8 @@ from api.routers.alerts import router as alerts_router
 from api.routers.webhooks import router as webhooks_router
 from api.routers.rl_policy import router as rl_policy_router
 from api.routers.scenarios import router as scenarios_router
+from api.routers.pipeline import router as pipeline_router
+from api.routers.assistant import router as assistant_router
 
 app.include_router(health_router)
 app.include_router(lineage_router)
@@ -185,6 +188,10 @@ app.include_router(webhooks_router)
 # DRL Policy + Scenarios routers
 app.include_router(rl_policy_router)
 app.include_router(scenarios_router)
+# On-demand pipeline/model execution
+app.include_router(pipeline_router)
+# AI assistant (Groq) chat
+app.include_router(assistant_router)
 
 
 # ── Root endpoint ──────────────────────────────────────────

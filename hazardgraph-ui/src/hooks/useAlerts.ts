@@ -24,7 +24,7 @@ function getAuthHeaders(): Record<string, string> {
   return headers;
 }
 
-async function approveAlert(id: number, messageText: string) {
+async function approveAlert(id: string, messageText: string) {
   const res = await fetch(`${API_BASE}/alerts/${id}`, {
     method: 'PATCH',
     headers: getAuthHeaders(),
@@ -34,7 +34,7 @@ async function approveAlert(id: number, messageText: string) {
   return res.json();
 }
 
-async function rejectAlert(id: number, reason: string) {
+async function rejectAlert(id: string, reason: string) {
   const res = await fetch(`${API_BASE}/alerts/${id}`, {
     method: 'PATCH',
     headers: getAuthHeaders(),
@@ -44,7 +44,7 @@ async function rejectAlert(id: number, reason: string) {
   return res.json();
 }
 
-async function dispatchAlert(id: number) {
+async function dispatchAlert(id: string) {
   const res = await fetch(`${API_BASE}/alerts/${id}/dispatch`, {
     method: 'POST',
     headers: getAuthHeaders(),
@@ -64,7 +64,7 @@ export function useAlerts(status?: string) {
 export function useApproveAlert() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, messageText }: { id: number; messageText: string }) =>
+    mutationFn: ({ id, messageText }: { id: string; messageText: string }) =>
       approveAlert(id, messageText),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['alerts'] });
@@ -75,7 +75,7 @@ export function useApproveAlert() {
 export function useRejectAlert() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason: string }) =>
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       rejectAlert(id, reason),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['alerts'] });
@@ -86,7 +86,7 @@ export function useRejectAlert() {
 export function useDispatchAlert() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => dispatchAlert(id),
+    mutationFn: (id: string) => dispatchAlert(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['alerts'] });
     },
@@ -94,7 +94,7 @@ export function useDispatchAlert() {
 }
 
 export interface Alert {
-  id: number;
+  id: string;
   region_id: string;
   region_name?: string;
   country?: string;

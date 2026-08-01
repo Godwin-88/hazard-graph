@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DispatchResult:
-    alert_id: int
+    alert_id: str
     sent_count: int
     success_count: int
     failed_count: int
@@ -49,7 +49,7 @@ class AfricasTalkingService:
 
     async def dispatch(
         self,
-        alert_id: int,
+        alert_id: str,
         message: str,
         recipients: list[str],
         postgres_session,
@@ -91,7 +91,7 @@ class AfricasTalkingService:
             # Update alert status
             try:
                 await postgres_session.execute(
-                    text("UPDATE alerts SET status = 'dispatch_failed' WHERE id = :aid"),
+                    text("UPDATE alerts SET status = 'dispatch_failed' WHERE id = :aid::uuid"),
                     {"aid": alert_id},
                 )
                 await postgres_session.commit()
@@ -124,7 +124,7 @@ class AfricasTalkingService:
                     text(
                         """INSERT INTO alert_deliveries
                            (alert_id, channel, recipient, status, delivered_at, created_at)
-                           VALUES (:aid, 'sms', :phone, :status, :now, :now)"""
+                           VALUES (:aid::uuid, 'sms', :phone, :status, :now, :now)"""
                     ),
                     {
                         "aid": alert_id,
@@ -145,7 +145,7 @@ class AfricasTalkingService:
                        sent_count = :sent,
                        delivered_count = :delivered,
                        dispatched_at = :now
-                       WHERE id = :aid"""
+                       WHERE id = :aid::uuid"""
                 ),
                 {
                     "sent": len(recipients),

@@ -9,6 +9,7 @@ import AlertReview from './pages/AlertReview';
 import Analytics from './pages/Analytics';
 import ScenarioSimulator from './pages/ScenarioSimulator';
 import Login from './pages/Login';
+import { AssistantChat } from './components/assistant/AssistantChat';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,6 +26,7 @@ function Layout({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen flex-col bg-[#0A0F1E]">
       <QuantifayaHeader />
       <main className="flex-1 overflow-hidden">{children}</main>
+      <AssistantChat />
     </div>
   );
 }

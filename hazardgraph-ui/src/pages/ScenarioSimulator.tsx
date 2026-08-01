@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { RegimeBadge } from '@/components/shared/RegimeBadge'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+import ModelRunner from '@/components/scenarios/ModelRunner'
 import {
   fetchPolicyRecommendations,
   triggerPolicyTraining,
@@ -264,8 +265,11 @@ export default function ScenarioSimulator() {
         </p>
       </div>
 
-      <Tabs defaultValue="policy" className="w-full">
+      <Tabs defaultValue="models" className="w-full">
         <TabsList className="bg-[#12172B] border border-border/50">
+          <TabsTrigger value="models" className="text-text-secondary data-[state=active]:text-white data-[state=active]:bg-risk-green/20">
+            Model Runner
+          </TabsTrigger>
           <TabsTrigger value="policy" className="text-text-secondary data-[state=active]:text-white data-[state=active]:bg-risk-green/20">
             DRL Policy
           </TabsTrigger>
@@ -276,6 +280,10 @@ export default function ScenarioSimulator() {
             Aid Clusters
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="models" className="mt-4">
+          <ModelRunner />
+        </TabsContent>
 
         <TabsContent value="policy" className="mt-4 space-y-4">
           <div className="flex justify-between items-center">

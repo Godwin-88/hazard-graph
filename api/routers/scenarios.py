@@ -79,7 +79,7 @@ async def get_clusters(
     clusters = [dict(record) async for record in result]
 
     response = {'clusters': clusters}
-    await redis.setex(cache_key, 1800, json.dumps(response))
+    await redis.set(cache_key, json.dumps(response), ttl=1800)
     return response
 
 

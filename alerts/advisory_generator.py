@@ -146,10 +146,10 @@ Generate one 160-character SMS advisory in {language_name}."""
         bma_results: list,
         postgres_session=None,
         neo4j_session=None,
-    ) -> list[int]:
+    ) -> list[str]:
         """Generate advisories for all triggered regions with kelly_priority > 0.10.
 
-        Returns list of created alert IDs from PostgreSQL.
+        Returns list of created alert IDs (UUIDs) from PostgreSQL.
         """
         import json as _json
         from datetime import datetime, timezone
@@ -163,7 +163,7 @@ Generate one 160-character SMS advisory in {language_name}."""
             calendar_map = _json.load(f)
 
         current_month = str(datetime.now(timezone.utc).month)
-        created_ids: list[int] = []
+        created_ids: list[str] = []
 
         if not risk_scores:
             logger.info("No risk scores provided for advisory generation")
@@ -250,7 +250,7 @@ Generate one 160-character SMS advisory in {language_name}."""
                     await postgres_session.commit()
                     row = result.fetchone()
                     if row:
-                        alert_id = row[0]
+                        alert_id = str(row[0])
                         created_ids.append(alert_id)
                         logger.info("Created alert %s for region %s", alert_id, getattr(score, "region_id", ""))
             except Exception as exc:

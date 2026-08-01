@@ -317,7 +317,7 @@ export default function GraphExplorer() {
   const { data: nodesData, isLoading: nodesLoading, error: nodesError } = useGraphNodes();
   const { data: edges, isLoading: edgesLoading, error: edgesError } = useGraphEdges();
 
-  const nodes = nodesData?.nodes ?? [];
+  const nodes: GraphNode[] = nodesData?.nodes ?? [];
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'full-graph', label: 'Full Graph' },
@@ -400,10 +400,16 @@ export default function GraphExplorer() {
         {activeTab === 'causal-chains' && <CausalChainsView />}
         {activeTab === 'regime-map' && <RegimeMapView />}
 
-        {/* Node detail sheet */}
+        {/* Node detail modal */}
         <NodeDetailSheet
           node={selectedNode}
+          edges={Array.isArray(edges) ? edges : []}
+          nodesMap={Object.fromEntries(nodes.map((n) => [String(n.id), n]))}
           onClose={() => setSelectedNode(null)}
+          onJumpTo={(nodeId) => {
+            const next = nodes.find((n) => String(n.id) === String(nodeId));
+            if (next) setSelectedNode(next);
+          }}
         />
       </div>
     </div>

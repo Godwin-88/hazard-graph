@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { API_BASE_URL } from '@/lib/constants'
 import { useAuth } from '@/hooks/useAuth'
+import { TermTooltip } from '@/components/shared/TermTooltip'
 
 interface NavLinkProps {
   href: string
@@ -81,13 +82,23 @@ export function QuantifayaHeader() {
         </span>
       </div>
 
-      {/* Centre: Nav */}
+      {/* Centre: Nav — every item exposes a hover glossary tooltip */}
       <nav className="flex items-center gap-1">
-        <NavLink href="/" label="Dashboard" active={currentPath === '/'} />
-        <NavLink href="/graph" label="Graph Explorer" active={currentPath === '/graph'} />
-        <NavLink href="/alerts" label="Alerts" />
-        <NavLink href="/analytics" label="Analytics" />
-        <NavLink href="/scenarios" label="Scenarios" active={currentPath === '/scenarios'} />
+        <TermTooltip term="Risk Score">
+          <NavLink href="/" label="Dashboard" active={currentPath === '/'} />
+        </TermTooltip>
+        <TermTooltip term="Graph Explorer">
+          <NavLink href="/graph" label="Graph Explorer" active={currentPath === '/graph'} />
+        </TermTooltip>
+        <TermTooltip term="Forecast & Analytics">
+          <NavLink href="/analytics" label="Forecast & Analytics" active={currentPath === '/analytics'} />
+        </TermTooltip>
+        <TermTooltip term="Simulate & Run">
+          <NavLink href="/scenarios" label="Simulate & Run" active={currentPath === '/scenarios'} />
+        </TermTooltip>
+        <TermTooltip term="Alert Review">
+          <NavLink href="/alerts" label="Alert Review" />
+        </TermTooltip>
       </nav>
 
       {/* Right: Clock + Status */}

@@ -92,7 +92,7 @@ async def get_policy_recommendations(
         'model': 'GNN-PPO (GAT + PPO, 11 nodes × 10 features)'
     }
 
-    await redis.setex(cache_key, 600, json.dumps(response))
+    await redis.set(cache_key, json.dumps(response), ttl=600)
     return response
 
 
