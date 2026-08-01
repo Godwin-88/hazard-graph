@@ -34,9 +34,20 @@ function formatValue(value: unknown): string {
 export function NodeDetailSheet({ node, edges, nodesMap, onClose, onJumpTo }: NodeDetailSheetProps) {
   if (!node) return null;
 
+  // The API returns all real node properties nested under `node.properties`.
+  // Flatten them so the property table actually renders the backend data.
   const excludedKeys = ['id', 'label', 'type', 'properties'];
   const cleanProps: Record<string, unknown> = {};
-  Object.entries(node).forEach(([k, v]) => { if (!excludedKeys.includes(k)) cleanProps[k] = v; });
+  Object.entries(node).forEach(([k, v]) => {
+    if (excludedKeys.includes(k)) return;
+    cleanProps[k] = v;
+  });
+  const nestedProps = node.properties;
+  if (nestedProps && typeof nestedProps === 'object' && !Array.isArray(nestedProps)) {
+    Object.entries(nestedProps as Record<string, unknown>).forEach(([k, v]) => {
+      if (!(k in cleanProps)) cleanProps[k] = v;
+    });
+  }
 
   const relatedEdges = edges.filter(
     (e) => String(e.source) === String(node.id) || String(e.target) === String(node.id),

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
+import { Info } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { RegimeBadge } from '@/components/shared/RegimeBadge'
@@ -31,7 +32,16 @@ function PolicyRecommendationCard({ rec }: { rec: PolicyRecommendation }) {
     <Card className="border-border/50 bg-[#12172B]">
       <CardContent className="p-4">
         <div className="flex items-center justify-between mb-2">
-          <h4 className="text-sm font-semibold text-white capitalize">{rec.region_id.replace('_', ' ')}</h4>
+          <h4 className="text-sm font-semibold text-white capitalize flex items-center gap-1">
+            {rec.region_id.replace('_', ' ')}
+            <div className="group relative">
+              <Info className="h-3 w-3 cursor-help text-text-muted" />
+              <div className="absolute bottom-full left-0 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                Recommended action for this region based on the GNN-PPO policy.
+                The policy considers BMA risk score, Kelly priority, confidence, and model consensus.
+              </div>
+            </div>
+          </h4>
           <span className={`px-2 py-0.5 rounded text-xs font-medium border ${ACTION_COLORS[rec.action_label] || ''}`}>
             {rec.action_label.replace('_', ' ')}
           </span>
@@ -41,11 +51,16 @@ function PolicyRecommendationCard({ rec }: { rec: PolicyRecommendation }) {
             <span>Confidence</span>
             <span>{(rec.probability * 100).toFixed(0)}%</span>
           </div>
-          <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-risk-green rounded-full transition-all"
-              style={{ width: `${rec.probability * 100}%` }}
-            />
+          <div className="group relative">
+            <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-risk-green rounded-full transition-all"
+                style={{ width: `${rec.probability * 100}%` }}
+              />
+            </div>
+            <div className="absolute bottom-full left-0 mb-1 hidden w-48 rounded-lg bg-gray-900 p-1.5 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+              Model consensus confidence. Higher values mean more models agree on the recommended action.
+            </div>
           </div>
         </div>
         <p className="text-xs text-text-secondary">{rec.reasoning}</p>
@@ -76,7 +91,17 @@ function CascadeSimulatorView() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <label className="text-sm text-text-secondary mb-1 block">Source Region</label>
+            <label className="text-sm text-text-secondary mb-1 block flex items-center gap-1">
+              Source Region
+              <div className="group relative">
+                <Info className="h-3 w-3 cursor-help text-text-muted" />
+                <div className="absolute bottom-full left-0 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                  The region where the contagion cascade originates.
+                  The cascade simulation models how a crisis in this region propagates to neighboring regions
+                  through trade dependency, population flow, and border permeability.
+                </div>
+              </div>
+            </label>
             <select
               value={sourceRegion}
               onChange={(e) => setSourceRegion(e.target.value)}
@@ -89,8 +114,15 @@ function CascadeSimulatorView() {
           </div>
 
           <div>
-            <label className="text-sm text-text-secondary mb-1 block">
+            <label className="text-sm text-text-secondary mb-1 block flex items-center gap-1">
               Horizon: {horizonWeeks} weeks
+              <div className="group relative">
+                <Info className="h-3 w-3 cursor-help text-text-muted" />
+                <div className="absolute bottom-full left-0 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                  Simulation time horizon in weeks. Longer horizons capture more distant cascade effects
+                  but with lower certainty. Default is 8 weeks per the SIR contagion model specification.
+                </div>
+              </div>
             </label>
             <input
               type="range"
@@ -103,8 +135,16 @@ function CascadeSimulatorView() {
           </div>
 
           <div>
-            <label className="text-sm text-text-secondary mb-1 block">
+            <label className="text-sm text-text-secondary mb-1 block flex items-center gap-1">
               Simulation Paths: {nPaths}
+              <div className="group relative">
+                <Info className="h-3 w-3 cursor-help text-text-muted" />
+                <div className="absolute bottom-full left-0 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                  Number of Monte Carlo paths for the SIR contagion simulation.
+                  More paths give more stable probability estimates but take longer to compute.
+                  Default 500 paths provide a good balance of accuracy and speed.
+                </div>
+              </div>
             </label>
             <input
               type="range"
@@ -139,8 +179,16 @@ function CascadeSimulatorView() {
         <>
           <Card className="border-risk-green/30 bg-risk-green/5">
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-risk-green mb-1">
+              <div className="text-2xl font-bold text-risk-green mb-1 flex items-center gap-2">
                 {result.expected_affected_population_millions.toFixed(1)}M
+                <div className="group relative">
+                  <Info className="h-4 w-4 cursor-help text-text-muted" />
+                  <div className="absolute bottom-full left-0 mb-2 hidden w-64 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                    Estimated number of people at risk from the contagion cascade triggered by the source region.
+                    Based on SIR-inspired model with 1,000 Monte Carlo paths over an 8-week horizon.
+                    Population flow and trade dependency weights determine cascade reach.
+                  </div>
+                </div>
               </div>
               <div className="text-sm text-text-secondary">
                 People at risk from {result.source_region.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())} cascade
@@ -148,13 +196,29 @@ function CascadeSimulatorView() {
               <div className="mt-2 text-xs text-risk-green">
                 Chain Breaker: <strong className="capitalize">{result.critical_intervention_node.replace('_', ' ')}</strong>
                 {' '}— most effective intervention target
+                <div className="group relative inline-block ml-1">
+                  <Info className="h-3 w-3 cursor-help text-text-muted" />
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                    The region whose early intervention would most reduce the probability of cascade propagation.
+                    Targeting this node breaks the contagion chain most efficiently.
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
 
           <Card className="border-border/50 bg-[#12172B]">
             <CardHeader>
-              <CardTitle className="text-white text-sm">Cascade Probabilities</CardTitle>
+              <CardTitle className="text-white text-sm flex items-center gap-1">
+                Cascade Probabilities
+                <div className="group relative">
+                  <Info className="h-3 w-3 cursor-help text-text-muted" />
+                  <div className="absolute bottom-full left-0 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                    Probability that each region enters Crisis within 8 weeks given the source region's shock.
+                    Red (&gt;50%): high cascade risk. Amber (20–50%): moderate risk. Green (&lt;20%): low risk.
+                  </div>
+                </div>
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
@@ -221,8 +285,16 @@ function ClustersView() {
           <Card key={cluster.id} className="border-border/50 bg-[#12172B]">
             <CardHeader className="pb-2">
               <CardTitle className="text-white text-sm">{cluster.label}</CardTitle>
-              <CardDescription className="text-text-muted text-xs">
+              <CardDescription className="text-text-muted text-xs flex items-center gap-1">
                 {cluster.member_count} regions · Risk: {cluster.risk_score?.toFixed(0) || 'N/A'}
+                <div className="group relative">
+                  <Info className="h-3 w-3 cursor-help text-text-muted" />
+                  <div className="absolute bottom-full left-0 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                    Aid allocation cluster identified by Louvain community detection on the hazard similarity graph.
+                    Edge weights combine cosine similarity of SPI, NDVI, IPC, and PageRank with geographic adjacency.
+                    Cluster risk = max(member region risk scores). Cluster-level alerts fire when risk &gt; 70.
+                  </div>
+                </div>
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -235,7 +307,17 @@ function ClustersView() {
               </div>
               <div className="flex items-center gap-2">
                 <RegimeBadge regime={cluster.dominant_hazard} />
-                <span className="text-xs text-text-muted">dominant hazard</span>
+                <span className="text-xs text-text-muted flex items-center gap-1">
+                  dominant hazard
+                  <div className="group relative">
+                    <Info className="h-3 w-3 cursor-help text-text-muted" />
+                    <div className="absolute bottom-full left-0 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                      The most prevalent hazard regime among the cluster's member regions.
+                      Regimes: Baseline (normal), DroughtOnset (dry trending), SevereDrought (extreme dry),
+                      FloodWatch (wet trending), FloodEmergency (extreme wet).
+                    </div>
+                  </div>
+                </span>
               </div>
             </CardContent>
           </Card>
@@ -288,7 +370,18 @@ export default function ScenarioSimulator() {
         <TabsContent value="policy" className="mt-4 space-y-4">
           <div className="flex justify-between items-center">
             <div>
-              <h3 className="text-white text-lg font-semibold">DRL Policy Recommendations</h3>
+              <h3 className="text-white text-lg font-semibold flex items-center gap-1">
+                DRL Policy Recommendations
+                <div className="group relative">
+                  <Info className="h-4 w-4 cursor-help text-text-muted" />
+                  <div className="absolute bottom-full left-0 mb-2 hidden w-72 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                    GNN-PPO reinforcement learning policy recommends actions per region.
+                    HIGH_ESCALATE: immediate SMS alert required. MEDIUM_SMS: advisory recommended.
+                    LOW_ADVISORY: monitor only. NO_ALERT: risk is low, no action needed.
+                    Recommendations are based on BMA posterior risk, Kelly priority, and model consensus.
+                  </div>
+                </div>
+              </h3>
               <p className="text-xs text-text-muted">
                 GNN-PPO policy: {policyQuery.data?.model || 'loading...'}
               </p>

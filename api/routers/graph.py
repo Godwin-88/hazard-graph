@@ -53,6 +53,12 @@ def _infer_node_type(props: dict) -> str:
         return "HazardCluster"
     if "score" in props and "model" in str(props.get("id", "")).lower():
         return "BMAScore"
+    if "ndvi" in props or "anomaly" in props:
+        return "NDVISignal"
+    if "events_count" in props or "fatalities" in props:
+        return "ConflictSignal"
+    if "p_drought_4w" in props or "p_flood_4w" in props:
+        return "StochasticSignal"
     return "Unknown"
 
 
@@ -101,8 +107,27 @@ def _transform_node(record: dict) -> dict:
     }
 
 
+def _edge_endpoint_id(node) -> str:
+    """Return the domain id of a relationship endpoint node.
+
+    Prefer the node's own `id` property (e.g. `region_kenya`,
+    `rs_hist_...`) so edges line up with the node ids returned by
+    _transform_node. Falls back to the Neo4j element_id.
+    """
+    if node is None:
+        return ""
+    props = getattr(node, "_properties", {}) or {}
+    return str(props.get("id") or getattr(node, "element_id", "") or "")
+
+
 def _transform_edge(record: dict) -> Optional[dict]:
-    """Transform a Neo4j relationship record to frontend-friendly format."""
+    """Transform a Neo4j relationship record to frontend-friendly format.
+
+    Returns the full relationship property set under `properties` (so the
+    UI can render priority, since, lag_weeks, etc.) plus the weight/lag_days
+    convenience fields used by the graph sliders. source/target use the
+    endpoint nodes' domain `id` property so they match node ids.
+    """
     r = record.get("r", record)
     if not r:
         return None
@@ -112,12 +137,14 @@ def _transform_edge(record: dict) -> Optional[dict]:
         r = r[1]  # index 1 is always the relationship in a 3-tuple
     # Handle Neo4j Relationship object by converting to a plain dict
     if hasattr(r, "_properties"):
+        props = dict(r._properties or {})
         return {
-            "source": r.start_node.element_id if hasattr(r, "start_node") else "",
-            "target": r.end_node.element_id if hasattr(r, "end_node") else "",
+            "source": _edge_endpoint_id(getattr(r, "start_node", None)),
+            "target": _edge_endpoint_id(getattr(r, "end_node", None)),
             "type": r.type,
-            "weight": r._properties.get("weight", 1.0),
-            "lag_days": r._properties.get("lag_days", 0),
+            "weight": props.get("weight", 1.0),
+            "lag_days": props.get("lag_days", 0),
+            "properties": props,
         }
     # Handle case where r is a plain string (relationship type)
     if isinstance(r, str):
@@ -127,6 +154,7 @@ def _transform_edge(record: dict) -> Optional[dict]:
             "type": r,
             "weight": 1.0,
             "lag_days": 0,
+            "properties": {},
         }
     # Fallback: treat as plain dict
     rel_type = r.get("type", r.get("_type", "RELATED_TO"))
@@ -137,6 +165,7 @@ def _transform_edge(record: dict) -> Optional[dict]:
         "type": rel_type,
         "weight": props.get("weight", 1.0),
         "lag_days": props.get("lag_days", 0),
+        "properties": props,
     }
 
 
@@ -277,14 +306,19 @@ async def get_region_subgraph(region_id: str):
         if not path:
             continue
 
+        # The async driver exposes Path.nodes / Path.relationships as
+        # attributes, not dict keys.
+        path_nodes = getattr(path, "nodes", []) or []
+        path_rels = getattr(path, "relationships", []) or []
+
         # Process nodes in path
-        for node in path.get("nodes", []):
+        for node in path_nodes:
             node_data = _transform_node({"n": node})
             if node_data:
                 nodes_map[node_data["id"]] = node_data
 
         # Process relationships in path
-        for rel in path.get("relationships", []):
+        for rel in path_rels:
             edge = _transform_edge({"r": rel})
             if edge:
                 edges.append(edge)
@@ -447,8 +481,11 @@ async def get_causal_chain(region_id: str, hazard_type: str):
         if not path:
             continue
 
+        # The async driver exposes Path.nodes as an attribute, not a dict key.
+        path_nodes = getattr(path, "nodes", []) or []
+
         chain_nodes = []
-        for node in path.get("nodes", []):
+        for node in path_nodes:
             node_data = _transform_node({"n": node})
             if node_data:
                 chain_nodes.append(node_data)

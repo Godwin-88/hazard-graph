@@ -38,6 +38,8 @@ const NODE_COLORS: Record<string, string> = {
   Alert: '#F43F5E',
   DataSource: '#64748B',
   HazardCluster: '#14B8A6',
+  NDVISignal: '#22C55E',
+  ConflictSignal: '#DC2626',
 };
 
 const NODE_SIZES: Record<string, number> = {
@@ -57,6 +59,8 @@ const NODE_SIZES: Record<string, number> = {
   Alert: 10,
   DataSource: 6,
   HazardCluster: 11,
+  NDVISignal: 7,
+  ConflictSignal: 8,
 };
 
 export function ForceGraph({ nodes, edges, onNodeClick }: ForceGraphProps) {

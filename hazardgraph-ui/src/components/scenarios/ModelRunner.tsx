@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Info } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import {
@@ -194,7 +195,16 @@ export default function ModelRunner() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <h4 className="text-sm font-semibold text-white mb-2">Region Risk Scores</h4>
+              <h4 className="text-sm font-semibold text-white mb-2 flex items-center gap-1">
+                Region Risk Scores
+                <div className="group relative">
+                  <Info className="h-3 w-3 cursor-help text-text-muted" />
+                  <div className="absolute bottom-full left-0 mb-2 hidden w-48 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                    BMA posterior risk score (0–100). Combines all model outputs weighted by recent accuracy.
+                    Scores ≥60 trigger SMS alerts. Scores 30–59 are elevated. Scores &lt;30 are normal.
+                  </div>
+                </div>
+              </h4>
               {riskQuery.isLoading && <LoadingSpinner />}
               <div className="space-y-1.5">
                 {regions.slice(0, 8).map((r) => (
@@ -207,13 +217,25 @@ export default function ModelRunner() {
                       />
                     </div>
                     <span className="w-8 text-right text-text-secondary">{r.score.toFixed(0)}</span>
+                    {r.score > 60 && <span className="text-[10px] text-risk-red font-semibold">⚠</span>}
+                    {r.score <= 30 && <span className="text-[10px] text-risk-green">✓</span>}
                   </div>
                 ))}
               </div>
             </div>
 
             <div>
-              <h4 className="text-sm font-semibold text-white mb-2">Regime Distribution</h4>
+              <h4 className="text-sm font-semibold text-white mb-2 flex items-center gap-1">
+                Regime Distribution
+                <div className="group relative">
+                  <Info className="h-3 w-3 cursor-help text-text-muted" />
+                  <div className="absolute bottom-full left-0 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                    Current climate regime detected by the Hidden Markov Model (HMM).
+                    Regimes map to hazard states: Baseline (normal), DroughtOnset (dry trending),
+                    SevereDrought (extreme dry), FloodWatch (wet trending), FloodEmergency (extreme wet).
+                  </div>
+                </div>
+              </h4>
               {regimesQuery.isLoading && <LoadingSpinner />}
               <div className="space-y-1.5">
                 {regimes.slice(0, 8).map((rg) => (
@@ -303,24 +325,96 @@ export default function ModelRunner() {
             </button>
           </div>
 
-          {forecastData && (
+                          {forecastData && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="p-3 rounded bg-[#0A0F1E] border border-border/50">
-                <div className="text-xs text-text-muted mb-1">LSTM · IPC Phase</div>
+                <div className="text-xs text-text-muted mb-1 flex items-center gap-1">
+                  LSTM · IPC Phase
+                  <div className="group relative">
+                    <Info className="h-3 w-3 cursor-help text-text-muted" />
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                      Bidirectional LSTM ensemble predicts the most likely IPC phase (1=Minimal to 5=Famine).
+                      Confidence reflects model agreement across the 5-model ensemble.
+                      Phase ≥4 indicates crisis-level food insecurity.
+                    </div>
+                  </div>
+                </div>
                 <div className="text-xl font-bold text-amber-400">{forecastData.lstm?.predicted_phase ?? '—'}</div>
-                <div className="text-[10px] text-text-muted">conf {forecastData.lstm?.confidence != null ? (forecastData.lstm.confidence * 100).toFixed(0) + '%' : '—'}</div>
+                <div className="text-[10px] text-text-muted">
+                  conf {forecastData.lstm?.confidence != null ? (forecastData.lstm.confidence * 100).toFixed(0) + '%' : '—'}
+                  {forecastData.lstm?.predicted_phase != null && forecastData.lstm.predicted_phase >= 4 && (
+                    <span className="ml-1 text-risk-red font-semibold">⚠ Crisis</span>
+                  )}
+                </div>
               </div>
               <div className="p-3 rounded bg-[#0A0F1E] border border-border/50">
-                <div className="text-xs text-text-muted mb-1">XGBoost · P(Crisis)</div>
+                <div className="text-xs text-text-muted mb-1 flex items-center gap-1">
+                  XGBoost · P(Crisis)
+                  <div className="group relative">
+                    <Info className="h-3 w-3 cursor-help text-text-muted" />
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                      XGBoost binary classifier: probability of IPC Phase ≥3 (Crisis) within 8 weeks.
+                      Calibrated with Platt scaling. SHAP values explain top drivers.
+                    </div>
+                  </div>
+                </div>
                 <div className="text-xl font-bold text-red-400">{forecastData.xgboost?.p_crisis != null ? (forecastData.xgboost.p_crisis * 100).toFixed(0) + '%' : '—'}</div>
+                <div className="text-[10px] text-text-muted">
+                  {forecastData.xgboost?.p_crisis != null && forecastData.xgboost.p_crisis > 0.5 && (
+                    <span className="text-risk-red font-semibold">High crisis risk</span>
+                  )}
+                  {forecastData.xgboost?.p_crisis != null && forecastData.xgboost.p_crisis <= 0.5 && forecastData.xgboost.p_crisis > 0.3 && (
+                    <span className="text-risk-amber font-semibold">Moderate risk</span>
+                  )}
+                  {forecastData.xgboost?.p_crisis != null && forecastData.xgboost.p_crisis <= 0.3 && (
+                    <span className="text-risk-green font-semibold">Low risk</span>
+                  )}
+                </div>
               </div>
               <div className="p-3 rounded bg-[#0A0F1E] border border-border/50">
-                <div className="text-xs text-text-muted mb-1">SDE · 4w Drought</div>
+                <div className="text-xs text-text-muted mb-1 flex items-center gap-1">
+                  SDE · 4w Drought
+                  <div className="group relative">
+                    <Info className="h-3 w-3 cursor-help text-text-muted" />
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                      CIR jump-diffusion stochastic model: probability of drought (SPI &lt; -1.0) in the next 4 weeks.
+                      10,000 Monte Carlo paths. Higher values indicate greater drought risk from rainfall anomalies.
+                    </div>
+                  </div>
+                </div>
                 <div className="text-xl font-bold text-blue-400">{forecastData.sde?.p_drought != null ? (forecastData.sde.p_drought * 100).toFixed(0) + '%' : '—'}</div>
+                <div className="text-[10px] text-text-muted">
+                  {forecastData.sde?.p_drought != null && forecastData.sde.p_drought > 0.5 && (
+                    <span className="text-risk-red font-semibold">Elevated drought risk</span>
+                  )}
+                  {forecastData.sde?.p_drought != null && forecastData.sde.p_drought <= 0.5 && (
+                    <span className="text-risk-green font-semibold">Normal range</span>
+                  )}
+                </div>
               </div>
               <div className="p-3 rounded bg-[#0A0F1E] border border-border/50">
-                <div className="text-xs text-text-muted mb-1">BMA · Posterior</div>
+                <div className="text-xs text-text-muted mb-1 flex items-center gap-1">
+                  BMA · Posterior
+                  <div className="group relative">
+                    <Info className="h-3 w-3 cursor-help text-text-muted" />
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                      Bayesian Model Averaging posterior risk score combining all 8 models (SDE, HMM, LSTM, XGBoost, CNN, TimeGPT, PageRank, VARLiNGAM).
+                      Weighted by recent Brier scores. Range 0–100. Scores ≥60 trigger alerts.
+                    </div>
+                  </div>
+                </div>
                 <div className="text-xl font-bold text-risk-green">{forecastData.bma?.score != null ? forecastData.bma.score.toFixed(0) : '—'}</div>
+                <div className="text-[10px] text-text-muted">
+                  {forecastData.bma?.score != null && forecastData.bma.score >= 60 && (
+                    <span className="text-risk-red font-semibold">⚠ Alert threshold</span>
+                  )}
+                  {forecastData.bma?.score != null && forecastData.bma.score < 60 && forecastData.bma.score >= 30 && (
+                    <span className="text-risk-amber font-semibold">Elevated</span>
+                  )}
+                  {forecastData.bma?.score != null && forecastData.bma.score < 30 && (
+                    <span className="text-risk-green font-semibold">Normal</span>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -340,15 +434,24 @@ export default function ModelRunner() {
               <div key={rec.region_id} className="p-3 rounded bg-[#0A0F1E] border border-border/50">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm font-semibold text-white capitalize">{rec.region_id.replace('_', ' ')}</span>
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] border ${
-                    rec.action_label === 'HIGH_ESCALATE' ? 'text-red-400 border-red-500/30 bg-red-500/10'
-                      : rec.action_label === 'MEDIUM_SMS' ? 'text-amber-400 border-amber-500/30 bg-amber-500/10'
-                      : rec.action_label === 'LOW_ADVISORY' ? 'text-blue-400 border-blue-500/30 bg-blue-500/10'
-                      : 'text-gray-400 border-gray-500/30 bg-gray-500/10'
-                  }`}>
-                    {rec.action_label.replace('_', ' ')}
-                  </span>
-                </div>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] border ${
+                        rec.action_label === 'HIGH_ESCALATE' ? 'text-red-400 border-red-500/30 bg-red-500/10'
+                          : rec.action_label === 'MEDIUM_SMS' ? 'text-amber-400 border-amber-500/30 bg-amber-500/10'
+                          : rec.action_label === 'LOW_ADVISORY' ? 'text-blue-400 border-blue-500/30 bg-blue-500/10'
+                          : 'text-gray-400 border-gray-500/30 bg-gray-500/10'
+                      }`}>
+                        {rec.action_label.replace('_', ' ')}
+                      </span>
+                      <div className="group relative inline-block">
+                        <Info className="h-3 w-3 cursor-help text-text-muted" />
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                          {rec.action_label === 'HIGH_ESCALATE' && 'Immediate escalation required. High risk + high confidence. Dispatch SMS alert to affected region immediately.'}
+                          {rec.action_label === 'MEDIUM_SMS' && 'Advisory recommended. Moderate risk or moderate confidence. Send SMS advisory to region.'}
+                          {rec.action_label === 'LOW_ADVISORY' && 'Low-level advisory. Monitor situation. No immediate action required.'}
+                          {rec.action_label === 'NO_ALERT' && 'No alert needed. Risk is low and confidence is sufficient to hold.'}
+                        </div>
+                      </div>
+                    </div>
                 <div className="text-[10px] text-text-muted mb-1">confidence {(rec.probability * 100).toFixed(0)}%</div>
                 <p className="text-xs text-text-secondary line-clamp-2">{rec.reasoning}</p>
               </div>
@@ -394,6 +497,15 @@ export default function ModelRunner() {
                     <span className={`px-1.5 py-0.5 rounded text-[10px] border ${statusColor(j.status)}`}>
                       {fmtStatus(j.status)}
                     </span>
+                    <div className="group relative inline-block">
+                      <Info className="h-3 w-3 cursor-help text-text-muted ml-1" />
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden w-48 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                        {j.status === 'completed' && 'Job finished successfully. All records processed.'}
+                        {j.status === 'running' && 'Job is currently executing. Wait for completion.'}
+                        {j.status === 'failed' && 'Job failed. Check error message for details.'}
+                        {j.status === 'queued' && 'Job is queued and waiting to start.'}
+                      </div>
+                    </div>
                     {j.error_message && <span title={j.error_message} className="ml-1 text-red-400 cursor-help">⚠</span>}
                   </td>
                   <td className="py-2 px-2 text-right text-text-secondary">{j.records_processed ?? '—'}</td>
@@ -430,10 +542,19 @@ export default function ModelRunner() {
                         {m.last_status === 'never_run' ? 'never run' : `last ${timeAgo(m.last_finished_at)}`}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] border ${statusColor(m.last_status)}`}>
                         {fmtStatus(m.last_status)}
                       </span>
+                      <div className="group relative">
+                        <Info className="h-3 w-3 cursor-help text-text-muted" />
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden w-56 rounded-lg bg-gray-900 p-2 text-xs text-gray-300 shadow-xl group-hover:block z-50">
+                          {m.last_status === 'never_run' && 'This model has not been executed yet. Run it to generate predictions.'}
+                          {m.last_status === 'completed' && 'Last run completed successfully. Predictions are current.'}
+                          {m.last_status === 'running' && 'Currently executing. Results will be available shortly.'}
+                          {m.last_status === 'failed' && 'Last run failed. Check job history for error details.'}
+                        </div>
+                      </div>
                       <button
                         onClick={() => runModelMutation.mutate(m.name)}
                         disabled={runModelMutation.isPending}
