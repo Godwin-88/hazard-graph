@@ -233,6 +233,79 @@ async def seed_postgres(postgres_session):
     print(f"  Seeded {len(demo_alerts)} pending alerts")
 
 
+async def seed_analytics_backfill(postgres_session):
+    """Backfill a realistic dispatched-alert history for the analytics page.
+
+    Idempotent: skips if dispatched alerts already exist. Creates sent
+    alerts with dispatched_at spread over the last 30 days plus matching
+    Y/N responses so the community-response charts show real numbers.
+    """
+    from models.postgres.alerts import Alert
+    from sqlalchemy import select, text
+
+    # Skip if we already have dispatched alerts
+    existing = await postgres_session.execute(
+        text("SELECT 1 FROM alerts WHERE status = 'sent' LIMIT 1")
+    )
+    if existing.scalar():
+        print("  Dispatched alert history already exists, skipping backfill.")
+        return
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    regions = [
+        ('region_somalia', 'somali', 89.4, 0.85),
+        ('region_south_sudan', 'english', 91.7, 0.78),
+        ('region_ethiopia', 'amharic', 82.1, 0.72),
+        ('region_kenya', 'swahili', 67.3, 0.55),
+        ('region_sudan', 'arabic', 71.2, 0.60),
+        ('region_uganda', 'english', 32.1, 0.20),
+        ('region_tanzania', 'swahili', 44.8, 0.30),
+        ('region_djibouti', 'french', 58.9, 0.40),
+        ('region_eritrea', 'english', 62.4, 0.45),
+    ]
+
+    created = 0
+    for i, (region_id, lang, risk, kelly) in enumerate(regions):
+        # Spread dispatched_at over the last 30 days
+        dispatched_at = now - datetime.timedelta(days=(i * 3) % 30)
+        alert = Alert(
+            region_id=region_id,
+            language=lang,
+            message_text=f"Demo dispatched advisory for {region_id}.",
+            risk_score_at_trigger=risk,
+            kelly_priority=kelly,
+            status='sent',
+            generated_at=dispatched_at - datetime.timedelta(hours=2),
+            approved_at=dispatched_at - datetime.timedelta(hours=1),
+            dispatched_at=dispatched_at,
+            sent_count=100 + i * 20,
+            delivered_count=90 + i * 15,
+        )
+        postgres_session.add(alert)
+        await postgres_session.flush()  # get alert.id
+
+        # Insert Y/N responses
+        n_responses = 8 + (i % 5)
+        for j in range(n_responses):
+            resp_type = 'Y' if j % 3 != 0 else 'N'
+            # Insert into alert_responses table directly
+            await postgres_session.execute(
+                text(
+                    """INSERT INTO alert_responses (id, alert_id, response_type, responded_at)
+                       VALUES (gen_random_uuid(), :aid, :rtype, :rdate)"""
+                ),
+                {
+                    "aid": str(alert.id),
+                    "rtype": resp_type,
+                    "rdate": dispatched_at + datetime.timedelta(hours=1 + j),
+                },
+            )
+        created += 1
+
+    await postgres_session.commit()
+    print(f"  Backfilled {created} dispatched alerts with Y/N responses")
+
+
 async def seed():
     """Main seed routine."""
     from db.neo4j_client import neo4j_client
@@ -264,6 +337,7 @@ async def seed():
     print("Seeding PostgreSQL alerts...")
     async with async_session_factory() as pg_session:
         await seed_postgres(pg_session)
+        await seed_analytics_backfill(pg_session)
     print("  Done.")
 
     # 6. Close connections

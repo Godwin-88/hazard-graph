@@ -176,6 +176,78 @@ async def _run_ipc_ingestion() -> None:
         await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
 
 
+async def _run_nasa_power_ingestion() -> None:
+    """Daily NASA POWER climate ingestion."""
+    job_name = "nasa_power_ingestion"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from ingestion.nasa_power_fetcher import fetch_all_regions
+        summary = await fetch_all_regions()
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=summary.get("success", 0),
+        )
+        logger.info("NASA POWER ingestion complete: %s", summary)
+    except Exception as exc:
+        logger.error("NASA POWER ingestion failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
+async def _run_faostat_ingestion() -> None:
+    """Weekly FAOSTAT food price ingestion."""
+    job_name = "faostat_ingestion"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from ingestion.faostat_fetcher import fetch_all_countries
+        summary = await fetch_all_countries()
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=summary.get("total_signals", 0),
+        )
+        logger.info("FAOSTAT ingestion complete: %s", summary)
+    except Exception as exc:
+        logger.error("FAOSTAT ingestion failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
+async def _run_ndvi_ingestion() -> None:
+    """Weekly NDVI greenness ingestion."""
+    job_name = "ndvi_ingestion"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from ingestion.ndvi_fetcher import fetch_all_regions
+        summary = await fetch_all_regions()
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=summary.get("success", 0),
+        )
+        logger.info("NDVI ingestion complete: %s", summary)
+    except Exception as exc:
+        logger.error("NDVI ingestion failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
+async def _run_acled_ingestion() -> None:
+    """Weekly ACLED conflict ingestion."""
+    job_name = "acled_ingestion"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from ingestion.acled_fetcher import fetch_conflict_data
+        summary = await fetch_conflict_data()
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=summary.get("success", 0),
+        )
+        logger.info("ACLED ingestion complete: %s", summary)
+    except Exception as exc:
+        logger.error("ACLED ingestion failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
 async def _run_sde_simulation() -> None:
     """Weekly SDE rainfall simulation for all regions."""
     job_name = "sde_simulation"
@@ -296,6 +368,49 @@ def register_jobs() -> None:
         trigger=CronTrigger(day_of_week="mon", hour=5, minute=30, timezone="UTC"),
         id="ipc_ingestion",
         name="IPC Phase Ingestion",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
+    # NASA POWER climate: daily at 07:15 EAT (04:15 UTC)
+    scheduler.add_job(
+        _run_nasa_power_ingestion,
+        trigger=CronTrigger(hour=4, minute=15, timezone="UTC"),
+        id="nasa_power_ingestion",
+        name="NASA POWER Climate Ingestion",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
+    # FAOSTAT food prices: weekly Monday 08:15 EAT (05:15 UTC)
+    scheduler.add_job(
+        _run_faostat_ingestion,
+        trigger=CronTrigger(day_of_week="mon", hour=5, minute=15, timezone="UTC"),
+        id="faostat_ingestion",
+        name="FAOSTAT Food Price Ingestion",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
+    # NDVI greenness: weekly Monday 08:45 EAT (05:45 UTC)
+    scheduler.add_job(
+        _run_ndvi_ingestion,
+        trigger=CronTrigger(day_of_week="mon", hour=5, minute=45, timezone="UTC"),
+        id="ndvi_ingestion",
+        name="NDVI Greenness Ingestion",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
+    # ACLED conflict: weekly Monday 09:15 EAT (06:15 UTC)
+    scheduler.add_job(
+        _run_acled_ingestion,
+        trigger=CronTrigger(day_of_week="mon", hour=6, minute=15, timezone="UTC"),
+        id="acled_ingestion",
+        name="ACLED Conflict Ingestion",
         replace_existing=True,
         misfire_grace_time=3600,
         max_instances=1,

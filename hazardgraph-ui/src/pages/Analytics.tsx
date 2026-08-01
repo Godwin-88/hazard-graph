@@ -35,6 +35,7 @@ interface AnalyticsData {
   weekly_uptake: UptakeData[]
   per_region: RegionResponse[]
   language_performance: LanguagePerf[]
+  source?: string
 }
 
 function getAuthHeaders(): Record<string, string> {
@@ -131,9 +132,16 @@ export default function Analytics() {
     <div className="p-6 space-y-6 overflow-y-auto h-full" style={{ fontFamily: 'Inter, sans-serif' }}>
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white" style={{ fontFamily: 'Raleway, sans-serif', fontWeight: 700 }}>
-          Community Response Analytics
-        </h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-white" style={{ fontFamily: 'Raleway, sans-serif', fontWeight: 700 }}>
+            Community Response Analytics
+          </h1>
+          {data.source === 'demo' && (
+            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-400">
+              Demo data
+            </span>
+          )}
+        </div>
         <p className="text-sm text-text-secondary mt-1">
           SMS feedback loop performance across all IGAD regions
         </p>
