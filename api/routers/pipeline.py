@@ -8,6 +8,7 @@ immediately with a run_id that the UI can poll.
 
 import asyncio
 import logging
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -54,19 +55,18 @@ class PipelineRunRequest(BaseModel):
 
 async def _log_job_start(job_name: str) -> str:
     """Insert a 'running' JobRun row, return its id."""
+    run_id = str(uuid.uuid4())
     async with async_session_factory() as session:
-        result = await session.execute(
+        await session.execute(
             text(
                 "INSERT INTO job_runs "
-                "(job_name, status, started_at, created_at) "
-                "VALUES (:name, 'running', NOW(), NOW()) "
-                "RETURNING id"
+                "(id, job_name, status, started_at, created_at) "
+                "VALUES (:id, :name, 'running', NOW(), NOW())"
             ),
-            {"name": job_name},
+            {"id": run_id, "name": job_name},
         )
-        row = result.fetchone()
         await session.commit()
-        return str(row[0]) if row else ""
+        return run_id
 
 
 async def _log_job_finish(run_id: str, status: str, records: int = 0, error: str = None) -> None:

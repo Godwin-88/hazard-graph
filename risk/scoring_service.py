@@ -66,9 +66,13 @@ async def compute_risk_scores(neo4j_session) -> list[RegionRiskScore]:
     regions_query = """
     MATCH (r:Region)
     OPTIONAL MATCH (rs:RainfallSignal)-[:MEASURED_IN]->(r)
+    WITH r, collect(DISTINCT rs)[0] AS rs
     OPTIONAL MATCH (fs:FoodPriceSignal)-[:MEASURED_IN]->(r)
+    WITH r, rs, collect(DISTINCT fs)[0] AS fs
     OPTIONAL MATCH (is_:IPCPhaseSignal)-[:MEASURED_IN]->(r)
+    WITH r, rs, fs, collect(DISTINCT is_)[0] AS is_
     OPTIONAL MATCH (ss:StochasticSignal)-[:MEASURED_IN]->(r)
+    WITH r, rs, fs, is_, collect(DISTINCT ss)[0] AS ss
     RETURN r.id AS region_id,
            r.name AS name,
            r.country AS country,

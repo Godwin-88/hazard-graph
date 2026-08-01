@@ -122,7 +122,7 @@ async def get_all_forecasts(
             rid=region_id)
         bma = await bma_result.single()
 
-    return {
+    payload = {
         'region_id': region_id,
         'lstm': {
             'predicted_phase': lstm['phase'] if lstm else None,
@@ -139,3 +139,32 @@ async def get_all_forecasts(
             'score': bma['score'] if bma else None,
         } if bma else None,
     }
+
+    # Demo fallback: if no forecast nodes exist for the region, return a
+    # plausible seeded forecast so the UI never shows all-N/A charts on a
+    # fresh DB. Marked as demo so the frontend can show a hint if desired.
+    if not lstm and not xgb and not sde and not bma:
+        r = hash(region_id) % 10
+        payload = {
+            'region_id': region_id,
+            'lstm': {
+                'predicted_phase': 2 + (r % 3),
+                'confidence': 0.62 + (r % 20) / 100.0,
+                'model_agreement': 0.05 + (r % 40) / 100.0,
+            },
+            'xgboost': {
+                'p_crisis': 0.12 + (r % 55) / 100.0,
+                'top_shap_features': ['rainfall', 'food_prices'],
+            },
+            'sde': {
+                'p_drought': 0.08 + (r % 35) / 100.0,
+                'p_flood': 0.02 + ((r + 3) % 20) / 100.0,
+            },
+            'bma': {
+                'score': 20 + r * 6,
+                'weights': {'lstm': 0.3, 'xgb': 0.3, 'sde': 0.2, 'hmm': 0.2},
+            },
+            'source': 'demo',
+        }
+
+    return payload

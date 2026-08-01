@@ -22,6 +22,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["health"])
 
 
+@router.get("/ping")
+async def ping():
+    """Lightweight keepalive endpoint for external monitors.
+
+    Returns immediately with no caching or DB queries.
+    Used by UptimeRobot, Cronitor, or Render's own health check
+    to prevent the free-tier server from spinning down.
+    """
+    return {"status": "ok"}
+
+
 @router.get("/health")
 async def health_check():
     """Return comprehensive system health status.

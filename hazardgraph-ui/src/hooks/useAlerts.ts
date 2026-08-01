@@ -1,56 +1,32 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { fetchJson } from '@/lib/api';
 
 const API_BASE = '/api/v1';
 
 async function fetchAlerts(status?: string) {
-  const token = sessionStorage.getItem('access_token');
   const params = status ? `?status=${status}` : '';
-  const headers: Record<string, string> = {};
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
   // Use trailing slash to prevent FastAPI 307 redirect which drops auth headers
-  const res = await fetch(`${API_BASE}/alerts/${params}`, { headers });
-  if (!res.ok) throw new Error('Failed to fetch alerts');
-  return res.json();
-}
-
-function getAuthHeaders(): Record<string, string> {
-  const token = sessionStorage.getItem('access_token');
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
+  return fetchJson(`${API_BASE}/alerts/${params}`);
 }
 
 async function approveAlert(id: string, messageText: string) {
-  const res = await fetch(`${API_BASE}/alerts/${id}`, {
+  return fetchJson(`${API_BASE}/alerts/${id}`, {
     method: 'PATCH',
-    headers: getAuthHeaders(),
     body: JSON.stringify({ action: 'approve', message_text: messageText }),
   });
-  if (!res.ok) throw new Error('Failed to approve alert');
-  return res.json();
 }
 
 async function rejectAlert(id: string, reason: string) {
-  const res = await fetch(`${API_BASE}/alerts/${id}`, {
+  return fetchJson(`${API_BASE}/alerts/${id}`, {
     method: 'PATCH',
-    headers: getAuthHeaders(),
     body: JSON.stringify({ action: 'reject', reason }),
   });
-  if (!res.ok) throw new Error('Failed to reject alert');
-  return res.json();
 }
 
 async function dispatchAlert(id: string) {
-  const res = await fetch(`${API_BASE}/alerts/${id}/dispatch`, {
+  return fetchJson(`${API_BASE}/alerts/${id}/dispatch`, {
     method: 'POST',
-    headers: getAuthHeaders(),
   });
-  if (!res.ok) throw new Error('Failed to dispatch alert');
-  return res.json();
 }
 
 export function useAlerts(status?: string) {

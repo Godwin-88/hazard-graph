@@ -233,6 +233,73 @@ def make_signal_id(source: str, hazard_type: str, date_str: str) -> str:
     return f"signal_{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
 
 
+async def upsert_conflict_signal(
+    signal_id: str,
+    events_count: int,
+    fatalities: int,
+    event_type: str,
+    location: str,
+    event_date: str,
+    region_id: str,
+) -> dict:
+    """Upsert a ConflictSignal node and link to Region.
+
+    ACLED-derived conflict events aggregated per week/admin-area, the
+    missing causal driver for Somalia/South Sudan/Sudan food insecurity.
+    """
+    query = """
+    MERGE (cs:ConflictSignal {id: $id})
+    SET cs.events_count = $events_count,
+        cs.fatalities = $fatalities,
+        cs.event_type = $event_type,
+        cs.location = $location,
+        cs.event_date = $event_date,
+        cs.region_id = $region_id
+    RETURN cs.id AS id
+    """
+    params = {
+        "id": signal_id,
+        "events_count": events_count,
+        "fatalities": fatalities,
+        "event_type": event_type,
+        "location": location,
+        "event_date": event_date,
+        "region_id": region_id,
+    }
+    result = await neo4j_client.execute_write(query, params)
+    return result[0] if result else {"id": signal_id}
+
+
+async def upsert_ndvi_signal(
+    signal_id: str,
+    ndvi_value: float,
+    anomaly: float,
+    date: str,
+    region_id: str,
+) -> dict:
+    """Upsert an NDVISignal node and link to Region.
+
+    NDVI greenness from WFP/HDX datasets (or MODIS when available).
+    """
+    query = """
+    MERGE (ns:NDVISignal {id: $id})
+    SET ns.ndvi = $ndvi_value,
+        ns.anomaly = $anomaly,
+        ns.date = $date,
+        ns.region_id = $region_id
+    RETURN ns.id AS id
+    """
+    params = {
+        "id": signal_id,
+        "ndvi_value": ndvi_value,
+        "anomaly": anomaly,
+        "date": date,
+        "region_id": region_id,
+    }
+    result = await neo4j_client.execute_write(query, params)
+    return result[0] if result else {"id": signal_id}
+
+
 def make_data_source_id(name: str) -> str:
     """Generate a deterministic DataSource ID."""
     return f"datasource_{name.lower().replace(' ', '_').replace('/', '_')}"

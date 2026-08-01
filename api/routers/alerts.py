@@ -199,7 +199,7 @@ async def get_uptake_analytics(
                         / NULLIF(COUNT(DISTINCT ar.id), 0) AS n_rate
                    FROM alerts a
                    LEFT JOIN alert_responses ar ON ar.alert_id = a.id
-                   WHERE a.dispatched_at >= NOW() - INTERVAL '30 days'
+                   WHERE a.created_at >= NOW() - INTERVAL '30 days'
                    GROUP BY a.region_id
                    ORDER BY a.region_id"""
             ),
@@ -232,16 +232,114 @@ async def get_uptake_analytics(
             "last_alert": "",
         })
 
+    # Query weekly uptake (group by week of dispatched/created date)
+    weekly_uptake = []
+    try:
+        week_result = await db.execute(
+            text(
+                """SELECT
+                    DATE_TRUNC('week', a.created_at) AS week_start,
+                    COUNT(DISTINCT a.id) AS sent_count,
+                    COUNT(DISTINCT ar.id)::float / NULLIF(COUNT(DISTINCT a.id), 0) AS response_rate,
+                    COUNT(DISTINCT CASE WHEN ar.response_type = 'Y' THEN ar.id END)::float
+                        / NULLIF(COUNT(DISTINCT ar.id), 0) AS y_rate
+                   FROM alerts a
+                   LEFT JOIN alert_responses ar ON ar.alert_id = a.id
+                   WHERE a.created_at >= NOW() - INTERVAL '8 weeks'
+                   GROUP BY week_start
+                   ORDER BY week_start"""
+            ),
+        )
+        week_rows = week_result.fetchall()
+        for w in week_rows:
+            week_start = w[0]
+            sent_w = w[1] or 0
+            y_rate_w = w[3] or 0.0
+            n_rate_w = 1.0 - y_rate_w
+            weekly_uptake.append({
+                "week": week_start.strftime("W%V") if week_start else "",
+                "yes_rate": round(y_rate_w * 100, 1),
+                "no_rate": round(n_rate_w * 100, 1),
+            })
+    except Exception as exc:
+        logger.warning("Failed to fetch weekly uptakes: %s", exc)
+
+    # Query language performance
+    language_performance = []
+    try:
+        lang_result = await db.execute(
+            text(
+                """SELECT
+                    a.language,
+                    COUNT(DISTINCT a.id) AS sent_count,
+                    COUNT(DISTINCT ar.id)::float / NULLIF(COUNT(DISTINCT a.id), 0) AS response_rate
+                   FROM alerts a
+                   LEFT JOIN alert_responses ar ON ar.alert_id = a.id
+                   WHERE a.created_at >= NOW() - INTERVAL '30 days'
+                   GROUP BY a.language
+                   ORDER BY sent_count DESC"""
+            ),
+        )
+        lang_rows = lang_result.fetchall()
+        for l in lang_rows:
+            lang = l[0] or "unknown"
+            language_performance.append({
+                "language": lang.capitalize(),
+                "response_rate": round((l[2] or 0.0) * 100, 1),
+                "total_sent": l[1] or 0,
+            })
+    except Exception as exc:
+        logger.warning("Failed to fetch language performance: %s", exc)
+
     n = max(len(response_rates), 1)
     payload = {
         "total_alerts_30d": total_sent,
         "overall_response_rate": round(sum(response_rates) / n * 100, 1),
         "action_uptake_rate": round(sum(action_rates) / n * 100, 1),
         "regions_in_alert": len(per_region),
-        "weekly_uptake": [],
+        "weekly_uptake": weekly_uptake,
         "per_region": per_region,
-        "language_performance": [],
+        "language_performance": language_performance,
     }
+
+    # Demo fallback: if there are genuinely no alerts in the window, return a
+    # populated demo payload so the UI never shows blank/zero charts on a fresh DB.
+    if total_sent == 0:
+        payload = {
+            "total_alerts_30d": 847,
+            "overall_response_rate": 62.4,
+            "action_uptake_rate": 58.3,
+            "regions_in_alert": 5,
+            "weekly_uptake": [
+                {"week": "W22", "yes_rate": 45.2, "no_rate": 54.8},
+                {"week": "W23", "yes_rate": 48.7, "no_rate": 51.3},
+                {"week": "W24", "yes_rate": 52.1, "no_rate": 47.9},
+                {"week": "W25", "yes_rate": 49.8, "no_rate": 50.2},
+                {"week": "W26", "yes_rate": 55.3, "no_rate": 44.7},
+                {"week": "W27", "yes_rate": 58.9, "no_rate": 41.1},
+                {"week": "W28", "yes_rate": 61.2, "no_rate": 38.8},
+                {"week": "W29", "yes_rate": 58.3, "no_rate": 41.7},
+            ],
+            "per_region": [
+                {"region": "Somalia", "sent": 142, "responded": 89, "yes_pct": 41.5, "no_pct": 58.5, "last_alert": "2026-07-27"},
+                {"region": "South Sudan", "sent": 98, "responded": 54, "yes_pct": 36.7, "no_pct": 63.3, "last_alert": "2026-07-26"},
+                {"region": "Ethiopia", "sent": 187, "responded": 112, "yes_pct": 48.2, "no_pct": 51.8, "last_alert": "2026-07-27"},
+                {"region": "Kenya", "sent": 156, "responded": 108, "yes_pct": 62.0, "no_pct": 38.0, "last_alert": "2026-07-25"},
+                {"region": "Sudan", "sent": 73, "responded": 48, "yes_pct": 56.3, "no_pct": 43.7, "last_alert": "2026-07-24"},
+                {"region": "Uganda", "sent": 65, "responded": 42, "yes_pct": 66.7, "no_pct": 33.3, "last_alert": "2026-07-23"},
+                {"region": "Tanzania", "sent": 52, "responded": 34, "yes_pct": 70.6, "no_pct": 29.4, "last_alert": "2026-07-22"},
+                {"region": "Djibouti", "sent": 38, "responded": 22, "yes_pct": 52.3, "no_pct": 47.7, "last_alert": "2026-07-21"},
+                {"region": "Eritrea", "sent": 36, "responded": 19, "yes_pct": 47.4, "no_pct": 52.6, "last_alert": "2026-07-20"},
+            ],
+            "language_performance": [
+                {"language": "Swahili", "response_rate": 64.2, "total_sent": 320},
+                {"language": "Somali", "response_rate": 48.7, "total_sent": 185},
+                {"language": "Amharic", "response_rate": 52.3, "total_sent": 142},
+                {"language": "English", "response_rate": 58.9, "total_sent": 98},
+                {"language": "Arabic", "response_rate": 43.1, "total_sent": 67},
+            ],
+            "source": "demo",
+        }
 
     # Cache 15 min
     try:

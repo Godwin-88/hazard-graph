@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     wfp_client_id: str = ""
     wfp_client_secret: str = ""
 
+    # ACLED conflict data (free account at developer.acleddata.com)
+    acled_key: str = ""
+    acled_email: str = ""
+    acled_base_url: str = "https://api.acleddata.com/acled/read"
+
+    # HDX / WFP NDVI (open, no key)
+    hdx_ndvi_url: str = "https://data.humdata.org/dataset/wfp-ndvi"
+
     # JWT
     jwt_secret_key: str = "change-this-to-a-32-char-minimum-secret"
     jwt_algorithm: str = "HS256"

@@ -56,9 +56,8 @@ export function QuantifayaHeader() {
   useEffect(() => {
     const checkHealth = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/v1/health`)
-        const data = await res.json()
-        setSystemOk(data.status === 'ok' || data.status === 'healthy')
+        const res = await fetch(`${API_BASE_URL}/api/v1/ping`)
+        setSystemOk(res.ok)
       } catch {
         setSystemOk(false)
       }

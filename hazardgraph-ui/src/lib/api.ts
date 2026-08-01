@@ -25,12 +25,42 @@ function getAuthHeaders(): Record<string, string> {
   return headers
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { headers: getAuthHeaders() })
-  if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${res.statusText}`)
+async function fetchJson<T>(
+  url: string,
+  options?: RequestInit,
+  retries: number = 3,
+): Promise<T> {
+  const maxRetries = retries
+  let lastError: Error | null = null
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: getAuthHeaders(),
+        ...options,
+      })
+      if (!res.ok) {
+        // Retry on 502/503/504 (server unavailable) or network failures
+        if (res.status >= 502 && res.status <= 504 && attempt < maxRetries) {
+          const delay = Math.pow(2, attempt) * 1000 // exponential backoff: 1s, 2s, 4s
+          await new Promise(resolve => setTimeout(resolve, delay))
+          continue
+        }
+        throw new Error(`API error ${res.status}: ${res.statusText}`)
+      }
+      return res.json()
+    } catch (err) {
+      lastError = err as Error
+      // Retry on network errors (e.g. server spinning up) if not last attempt
+      if (attempt < maxRetries) {
+        const delay = Math.pow(2, attempt) * 1000
+        await new Promise(resolve => setTimeout(resolve, delay))
+        continue
+      }
+      throw lastError
+    }
   }
-  return res.json()
+  throw lastError
 }
 
 export async function fetchRiskScores(): Promise<RiskScoresResponse> {
