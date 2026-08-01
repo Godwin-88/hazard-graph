@@ -38,16 +38,18 @@ export function Dashboard() {
   const clusters: HazardCluster[] = clusterData?.clusters || []
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex flex-col bg-background">
       {/* Two-column layout */}
-      <div className="flex flex-1 gap-4 overflow-hidden p-4">
+      <div className="flex gap-4 p-4">
         {/* Left: Map */}
         <div className="flex w-[65%] flex-col">
-          <RiskChoropleth
-            regions={regions}
-            clusters={showClusters ? clusters : []}
-            onRegionClick={(region) => setSelectedRegion(region)}
-          />
+          <div className="h-[calc(100vh-240px)] min-h-[420px]">
+            <RiskChoropleth
+              regions={regions}
+              clusters={showClusters ? clusters : []}
+              onRegionClick={(region) => setSelectedRegion(region)}
+            />
+          </div>
           {/* Bottom bar: Summary stats */}
           {summary && (
             <div className="mt-2 flex items-center gap-4 rounded-lg border border-border bg-surface px-4 py-2 text-sm text-text-secondary">

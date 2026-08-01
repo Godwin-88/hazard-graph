@@ -1,5 +1,55 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, Fragment } from 'react'
+import type { ReactNode } from 'react'
 import { sendAssistantMessage } from '@/lib/api'
+
+/**
+ * Minimal inline markdown renderer for assistant replies.
+ * Supports **bold**, *italic*, and `inline code`. Everything else is
+ * passed through as plain text (line breaks preserved).
+ */
+function renderInline(text: string): ReactNode[] {
+  // Split on inline code first so we don't parse markdown inside code spans.
+  const codeParts = text.split(/(`[^`]+`)/g)
+
+  return codeParts.map((part, i) => {
+    // Inline code span
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+      return (
+        <code
+          key={i}
+          className="rounded bg-[#12172B] px-1.5 py-0.5 text-[11px] text-risk-green"
+        >
+          {part.slice(1, -1)}
+        </code>
+      )
+    }
+
+    // Bold + italic
+    const boldParts = part.split(/(\*\*[^*]+\*\*)/g)
+    return boldParts.map((boldPart, j) => {
+      if (boldPart.startsWith('**') && boldPart.endsWith('**') && boldPart.length > 4) {
+        return (
+          <strong key={`${i}-${j}`} className="font-semibold text-white">
+            {renderInline(boldPart.slice(2, -2))}
+          </strong>
+        )
+      }
+
+      // Italic
+      const italicParts = boldPart.split(/(\*[^*]+\*)/g)
+      return italicParts.map((italicPart, k) => {
+        if (italicPart.startsWith('*') && italicPart.endsWith('*') && italicPart.length > 2) {
+          return (
+            <em key={`${i}-${j}-${k}`} className="italic text-gray-300">
+              {italicPart.slice(1, -1)}
+            </em>
+          )
+        }
+        return <Fragment key={`${i}-${j}-${k}`}>{italicPart}</Fragment>
+      })
+    })
+  })
+}
 
 interface Message {
   role: 'user' | 'assistant'
@@ -72,7 +122,7 @@ export function AssistantChat() {
                     : 'bg-[#12172B] text-gray-200'
                 }`}
               >
-                {m.content}
+                {m.role === 'assistant' ? renderInline(m.content) : m.content}
               </div>
             ))}
             {loading && <div className="max-w-[85%] rounded-lg bg-[#12172B] px-3 py-2 text-xs text-gray-400">Typing…</div>}

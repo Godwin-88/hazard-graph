@@ -25,7 +25,7 @@ function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen flex-col bg-[#0A0F1E]">
       <QuantifayaHeader />
-      <main className="flex-1 overflow-hidden">{children}</main>
+      <main className="flex-1 overflow-y-auto">{children}</main>
       <AssistantChat />
     </div>
   );

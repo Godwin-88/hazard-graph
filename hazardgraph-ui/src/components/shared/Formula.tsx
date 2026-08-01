@@ -20,5 +20,11 @@ export function Formula({ latex, className }: FormulaProps) {
     }
   }, [latex])
 
-  return <span className={className} dangerouslySetInnerHTML={{ __html: html }} />
+  return (
+    <span
+      className={className}
+      style={{ display: 'block', overflowX: 'auto', overflowY: 'hidden', maxWidth: '100%' }}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
 }

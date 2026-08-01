@@ -35,7 +35,7 @@ export function TermTooltip({ term, children, side = 'bottom', className }: Term
           <Tooltip.Content
             side={side}
             sideOffset={6}
-            className="z-50 max-w-xs rounded-lg border border-gray-700 bg-[#111827] p-3 text-sm text-white shadow-2xl"
+            className="z-[1200] max-w-xs rounded-lg border border-gray-700 bg-[#111827] p-3 text-sm text-white shadow-2xl"
           >
             {/* Term */}
             <div className="mb-1.5 font-semibold text-risk-green">{entry.term}</div>
