@@ -92,6 +92,13 @@ async def _run_varlingam_discovery() -> None:
                 logger.error("VARLiNGAM failed for region %s: %s", region_id, exc)
                 continue
 
+        # Heal graph relationships (connect newly discovered CausalEdges)
+        try:
+            from graph.node_writers import reconcile_graph_relationships
+            await reconcile_graph_relationships()
+        except Exception as exc:
+            logger.warning("Graph reconcile after %s failed: %s", job_name, exc)
+
         await _log_job_run(
             job_name=job_name,
             status="completed",
@@ -111,6 +118,14 @@ async def _run_hmm_regime_update() -> None:
     try:
         from regime.regime_updater import update_all_regimes
         summary = await update_all_regimes()
+
+        # Heal graph relationships (create IN_REGIME edges from updated regimes)
+        try:
+            from graph.node_writers import reconcile_graph_relationships
+            await reconcile_graph_relationships()
+        except Exception as exc:
+            logger.warning("Graph reconcile after %s failed: %s", job_name, exc)
+
         await _log_job_run(
             job_name=job_name,
             status="completed",
@@ -259,6 +274,13 @@ async def _run_sde_simulation() -> None:
         engine = RainfallSDE()
         results = await engine.run_all_regions(neo4j_client)
         records = len(results)
+
+        # Heal graph relationships (link new StochasticSignal -> Region etc.)
+        try:
+            from graph.node_writers import reconcile_graph_relationships
+            await reconcile_graph_relationships()
+        except Exception as exc:
+            logger.warning("Graph reconcile after %s failed: %s", job_name, exc)
 
         await _log_job_run(
             job_name=job_name,

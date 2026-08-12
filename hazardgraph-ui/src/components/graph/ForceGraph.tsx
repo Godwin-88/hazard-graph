@@ -67,7 +67,11 @@ export function ForceGraph({ nodes, edges, onNodeClick }: ForceGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<any>(null);
   const [activeTypes, setActiveTypes] = useState<Set<string>>(
-    () => new Set(['Region', 'HazardRegime', 'RainfallSignal', 'FoodPriceSignal', 'IPCPhaseSignal'])
+    () => new Set([
+      'Region', 'HazardRegime', 'RainfallSignal', 'FoodPriceSignal', 'IPCPhaseSignal',
+      'CausalEdge', 'HazardType', 'StochasticSignal', 'BMAScore', 'NDVISignal', 'ForecastSignal',
+      'InterventionStrategy', 'Alert', 'ConflictSignal',
+    ])
   );
   const [minWeight, setMinWeight] = useState(0);
   const [graphLibLoaded, setGraphLibLoaded] = useState(false);

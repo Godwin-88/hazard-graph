@@ -24,6 +24,70 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _regime_id(regime_name: str) -> str:
+    """Map a demo regime label to its canonical HazardRegime node id.
+
+    The seed uses camelCase labels like 'SevereDrought' in current_regime,
+    but the migration stores HazardRegime nodes keyed by snake-case ids
+    like 'regime_severe_drought'. This matches them correctly.
+    """
+    mapping = {
+        "Baseline": "regime_baseline",
+        "DroughtOnset": "regime_drought_onset",
+        "SevereDrought": "regime_severe_drought",
+        "FloodWatch": "regime_flood_watch",
+        "FloodEmergency": "regime_flood_emergency",
+    }
+    return mapping.get(str(regime_name).strip(), f"regime_{str(regime_name).strip().lower()}")
+
+
+async def register_demo_posteriors(redis_session):
+    """Seed realistic regime posteriors into Redis for the Regime Map.
+
+    The HMM updater may not populate Redis on a fresh environment, so the
+    Regime Map previously fell back to a flat 'Baseline 0.5' for every
+    region. Seeding here gives each region a posterior centred on its
+    actual demo regime, so the map renders correctly on first load.
+    """
+    import json as _json
+
+    default_posteriors = {
+        "Baseline":       {"Baseline": 0.78, "DroughtOnset": 0.10, "SevereDrought": 0.04, "FloodWatch": 0.05, "FloodEmergency": 0.03},
+        "DroughtOnset":   {"Baseline": 0.15, "DroughtOnset": 0.62, "SevereDrought": 0.14, "FloodWatch": 0.05, "FloodEmergency": 0.04},
+        "SevereDrought":  {"Baseline": 0.05, "DroughtOnset": 0.18, "SevereDrought": 0.68, "FloodWatch": 0.05, "FloodEmergency": 0.04},
+        "FloodWatch":     {"Baseline": 0.14, "DroughtOnset": 0.05, "SevereDrought": 0.04, "FloodWatch": 0.62, "FloodEmergency": 0.15},
+        "FloodEmergency": {"Baseline": 0.05, "DroughtOnset": 0.04, "SevereDrought": 0.03, "FloodWatch": 0.18, "FloodEmergency": 0.70},
+    }
+
+    demo_regimes = {
+        'region_kenya': 'DroughtOnset',
+        'region_ethiopia': 'SevereDrought',
+        'region_somalia': 'SevereDrought',
+        'region_sudan': 'DroughtOnset',
+        'region_south_sudan': 'SevereDrought',
+        'region_uganda': 'Baseline',
+        'region_tanzania': 'FloodWatch',
+        'region_rwanda': 'Baseline',
+        'region_burundi': 'Baseline',
+        'region_djibouti': 'DroughtOnset',
+        'region_eritrea': 'DroughtOnset',
+    }
+
+    count = 0
+    for region_id, regime in demo_regimes.items():
+        key = f"regime_posteriors:{region_id}"
+        payload = _json.dumps({
+            "regime": regime,
+            "posteriors": default_posteriors.get(regime, default_posteriors["Baseline"]),
+        })
+        try:
+            await redis_session.set(key, payload, ttl=3600)
+            count += 1
+        except Exception as exc:
+            print(f"  Warning: failed to seed posteriors for {region_id}: {exc}")
+    print(f"  Seeded posteriors for {count} regions into Redis")
+
+
 async def run_migration(neo4j_session):
     """Run the 001_schema.cypher migration file."""
     migration_path = os.path.join(
@@ -233,17 +297,21 @@ async def seed_neo4j(neo4j_session):
             date=datetime.date.today().isoformat()
         )
 
-        # 2. Update region risk score + regime
+        # 2. Update region risk score + regime.
+        # Match HazardRegime by its canonical `id` (e.g. regime_drought_onset)
+        # rather than `name` (e.g. "DroughtOnset") — the name-based MATCH
+        # silently failed before, leaving regions unlinked from their regime.
         await neo4j_session.run(
             """MATCH (reg:Region {id: $rid})
                SET reg.current_risk_score = $score,
                    reg.current_regime = $regime
                WITH reg
-               MATCH (hr:HazardRegime {name: $regime})
+               MATCH (hr:HazardRegime {id: $hid})
                MERGE (reg)-[:IN_REGIME]->(hr)""",
             rid=rid,
             score=sig['risk'],
-            regime=sig['regime']
+            regime=sig['regime'],
+            hid=_regime_id(sig['regime'])
         )
 
         # 3. Seed CausalEdge for high-risk regions
@@ -470,6 +538,14 @@ async def seed():
     async with async_session_factory() as pg_session:
         await seed_postgres(pg_session)
         await seed_analytics_backfill(pg_session)
+    print("  Done.")
+
+    # 6b. Seed regime posteriors into Redis for the Regime Map
+    print("Seeding regime posteriors into Redis...")
+    from db.redis_client import redis_client
+    await redis_client.connect()
+    await register_demo_posteriors(redis_client)
+    await redis_client.close()
     print("  Done.")
 
     # 7. Close connections

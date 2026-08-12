@@ -224,6 +224,22 @@ async def build_pipeline(
         timeout_seconds=120,
     )
 
+    # ── Reconcile node (final) — heal graph relationships so newly
+    # ingested/model-written nodes are connected to their Region and
+    # related nodes. Runs after everything so the graph is always
+    # correctly wired for the visualiser / causal queries.
+    from graph.node_writers import reconcile_graph_relationships
+
+    async def reconcile_wrapper(**kwargs):
+        return await reconcile_graph_relationships()
+
+    dag.add_node(
+        "reconcile",
+        reconcile_wrapper,
+        depends_on=["advisory"],
+        timeout_seconds=120,
+    )
+
     logger.info(
         "Pipeline DAG built: %d nodes",
         len(dag.nodes),

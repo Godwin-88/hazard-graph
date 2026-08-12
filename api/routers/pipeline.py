@@ -127,6 +127,18 @@ async def _run_model_in_background(run_id: str, job_name: str, func_name: str) -
         if func is None:
             raise RuntimeError(f"Unknown job function: {func_name}")
         await func()
+
+        # Heal graph relationships after model runs so newly written
+        # nodes are always connected (MEASURED_IN, IN_REGIME, CAUSES,
+        # HAS_HAZARD, PREDICTS). Idempotent and safe to run repeatedly.
+        try:
+            from db.neo4j_client import neo4j_client
+            from graph.node_writers import reconcile_graph_relationships
+            await neo4j_client.connect()
+            await reconcile_graph_relationships()
+        except Exception as exc:
+            logger.warning("Graph reconcile after %s failed: %s", job_name, exc)
+
         await _log_job_finish(run_id, "completed")
     except Exception as exc:
         logger.error("Model job %s failed: %s", job_name, exc)

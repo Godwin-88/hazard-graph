@@ -303,3 +303,221 @@ async def upsert_ndvi_signal(
 def make_data_source_id(name: str) -> str:
     """Generate a deterministic DataSource ID."""
     return f"datasource_{name.lower().replace(' ', '_').replace('/', '_')}"
+
+
+# ── Relationship reconciliation ────────────────────────────
+#
+# Idempotent helper that heals the knowledge graph so every signal
+# and model-output node is connected to its Region and related nodes.
+# Called (a) once as a data repair and (b) automatically after every
+# pipeline / model run so newly-ingested nodes stay connected without
+# manual intervention.
+
+_REGIME_NAME_TO_ID = {
+    "Baseline": "regime_baseline",
+    "Drought Onset": "regime_drought_onset",
+    "DroughtOnset": "regime_drought_onset",
+    "Severe Drought": "regime_severe_drought",
+    "SevereDrought": "regime_severe_drought",
+    "Flood Watch": "regime_flood_watch",
+    "FloodWatch": "regime_flood_watch",
+    "Flood Emergency": "regime_flood_emergency",
+    "FloodEmergency": "regime_flood_emergency",
+}
+
+# Signal node labels that hold a region_id property and should be
+# linked to their Region via MEASURED_IN.
+_REGION_LINKED_LABELS = [
+    "RainfallSignal",
+    "FoodPriceSignal",
+    "IPCPhaseSignal",
+    "NDVISignal",
+    "StochasticSignal",
+    "BMAScore",
+    "ForecastSignal",
+    "ConflictSignal",
+    "CausalEdge",
+    "Alert",
+]
+
+
+async def reconcile_graph_relationships() -> dict:
+    """Heal all cross-type relationships in the knowledge graph.
+
+    Idempotent — safe to run repeatedly. Links orphaned signals/model
+    outputs to their Region, wires Regions to their HazardRegime, creates
+    HAS_HAZARD for elevated-risk regions, connects CausalEdges to their
+    source/target signals, and adds PREDICTS from model outputs to the
+    rainfall signal they consume.
+
+    Returns a summary dict of the counts of relationships created.
+    """
+    summary = {}
+
+    # 1. MEASURED_IN — link every region-linked signal/model node to Region
+    for label in _REGION_LINKED_LABELS:
+        q = f"""
+        MATCH (n:{label})
+        WHERE n.region_id IS NOT NULL
+        MATCH (r:Region {{id: n.region_id}})
+        MERGE (n)-[:MEASURED_IN]->(r)
+        WITH count(r) AS cnt
+        RETURN cnt
+        """
+        try:
+            result = await neo4j_client.execute_write(q)
+            summary[f"measured_in_{label}"] = result[0]["cnt"] if result else 0
+        except Exception as exc:
+            logger.warning("reconcile MEASURED_IN for %s failed: %s", label, exc)
+
+    # 2. IN_REGIME — region -> HazardRegime using current_regime.
+    # The stored current_regime may be either a camelCase name
+    # ("SevereDrought") or already a regime id ("regime_severe_drought"),
+    # so resolve to a canonical HazardRegime id in both cases.
+    regions_result = await neo4j_client.execute_read(
+        "MATCH (r:Region) RETURN r.id AS id, r.current_regime AS regime"
+    )
+    in_regime_count = 0
+    for row in regions_result:
+        regime_val = str(row.get("regime") or "").strip()
+        if not regime_val:
+            continue
+        # If it's already a regime id, use it directly; otherwise map the
+        # camelCase/"Drought Onset" style name to the canonical id.
+        if regime_val.startswith("regime_"):
+            regime_id = regime_val
+        else:
+            regime_id = _REGIME_NAME_TO_ID.get(regime_val)
+        if not regime_id:
+            continue
+        # MERGE the HazardRegime node by id so IN_REGIME is created even if
+        # the regime node is missing (e.g. pristine migration state where
+        # only some regime nodes exist). Self-healing and idempotent.
+        in_result = await neo4j_client.execute_write(
+            """
+            MATCH (r:Region {id: $rid})
+            MERGE (hr:HazardRegime {id: $hid})
+            SET hr.name = COALESCE(hr.name, $regime_name)
+            MERGE (r)-[:IN_REGIME]->(hr)
+            WITH count(hr) AS cnt
+            RETURN cnt
+            """,
+            {"rid": row["id"], "hid": regime_id, "regime_name": regime_val},
+        )
+        in_regime_count += in_result[0]["cnt"] if in_result else 0
+    summary["in_regime"] = in_regime_count
+
+    # 3. HAS_HAZARD — elevated-risk regions get drought/flood hazard
+    q = """
+    MATCH (r:Region)
+    WHERE r.current_risk_score >= 40
+    MATCH (h:HazardType {id: 'hazard_drought'})
+    MERGE (r)-[:HAS_HAZARD]->(h)
+    WITH count(h) AS cnt
+    RETURN cnt
+    """
+    result = await neo4j_client.execute_write(q)
+    summary["has_hazard_drought"] = result[0]["cnt"] if result else 0
+
+    q = """
+    MATCH (r:Region)
+    WHERE r.current_regime CONTAINS 'Flood'
+    MATCH (h:HazardType {id: 'hazard_flood'})
+    MERGE (r)-[:HAS_HAZARD]->(h)
+    WITH count(h) AS cnt
+    RETURN cnt
+    """
+    result = await neo4j_client.execute_write(q)
+    summary["has_hazard_flood"] = result[0]["cnt"] if result else 0
+
+    # 4. CAUSES — connect CausalEdges to their source/target signal nodes
+    causal_result = await neo4j_client.execute_read(
+        """
+        MATCH (e:CausalEdge)
+        WHERE e.active IS NULL OR e.active = true
+        RETURN e.id AS id, e.region_id AS region_id,
+               e.source_variable AS src, e.target_variable AS tgt
+        """
+    )
+    causes_count = 0
+    for row in causal_result:
+        source_signal = await _resolve_signal_for_var(row.get("region_id"), row.get("src"))
+        target_signal = await _resolve_signal_for_var(row.get("region_id"), row.get("tgt"))
+        if source_signal and target_signal:
+            await neo4j_client.execute_write(
+                """
+                MATCH (s {id: $src_id})
+                MATCH (e:CausalEdge {id: $edge_id})
+                MATCH (t {id: $tgt_id})
+                MERGE (s)-[:CAUSES]->(e)
+                MERGE (e)-[:CAUSES]->(t)
+                """,
+                {"src_id": source_signal, "edge_id": row["id"], "tgt_id": target_signal},
+            )
+            causes_count += 1
+    summary["causes"] = causes_count
+
+    # 5. PREDICTS — model outputs predict the rainfall signal they consume
+    q = """
+    MATCH (n:StochasticSignal)
+    WHERE n.region_id IS NOT NULL
+    MATCH (rs:RainfallSignal {region_id: n.region_id})
+    WITH n, rs ORDER BY rs.date DESC LIMIT 1
+    MERGE (n)-[:PREDICTS]->(rs)
+    WITH count(rs) AS cnt
+    RETURN cnt
+    """
+    result = await neo4j_client.execute_write(q)
+    summary["predicts_stochastic"] = result[0]["cnt"] if result else 0
+
+    q = """
+    MATCH (n:BMAScore)
+    WHERE n.region_id IS NOT NULL
+    MATCH (rs:RainfallSignal {region_id: n.region_id})
+    WITH n, rs ORDER BY rs.date DESC LIMIT 1
+    MERGE (n)-[:PREDICTS]->(rs)
+    WITH count(rs) AS cnt
+    RETURN cnt
+    """
+    result = await neo4j_client.execute_write(q)
+    summary["predicts_bma"] = result[0]["cnt"] if result else 0
+
+    logger.info("Graph reconciliation complete: %s", summary)
+    return summary
+
+
+async def _resolve_signal_for_var(region_id: str, var: str):
+    """Return the id of the most recent signal node for a variable.
+
+    Maps a VARLiNGAM variable name (e.g. 'spi_30d', 'ipc_phase') to the
+    matching signal node label + property, then returns the most recent
+    node id for that region. Returns None if no mapping or no node found.
+    """
+    if not region_id or not var:
+        return None
+
+    # variable → (label, property)
+    mapping = {
+        "spi_30d": ("RainfallSignal", "spi_30d"),
+        "spi": ("RainfallSignal", "spi_30d"),
+        "ipc_phase": ("IPCPhaseSignal", "phase"),
+        "ipc": ("IPCPhaseSignal", "phase"),
+        "food_price": ("FoodPriceSignal", "price_usd"),
+        "price": ("FoodPriceSignal", "price_usd"),
+        "ndvi": ("NDVISignal", "ndvi"),
+    }
+    mapped = mapping.get(str(var).strip().lower())
+    if not mapped:
+        return None
+    label, prop = mapped
+
+    rows = await neo4j_client.execute_read(
+        f"""
+        MATCH (n:{label})
+        WHERE n.region_id = $region_id AND n.{prop} IS NOT NULL
+        RETURN n.id AS id
+        ORDER BY n.date DESC LIMIT 1
+        """,
+        {"region_id": region_id},
+    )
+    return rows[0]["id"] if rows else None

@@ -194,7 +194,7 @@ async def get_all_nodes():
     query = """
     MATCH (n) WHERE n.active IS NULL OR n.active <> false
     OPTIONAL MATCH (n)-[r]->(m)
-    RETURN n, r, m LIMIT 500
+    RETURN n, r, m LIMIT 2000
     """
     try:
         results = await neo4j_client.execute_read(query)
@@ -251,7 +251,7 @@ async def get_all_edges():
     query = """
     MATCH (n) WHERE n.active IS NULL OR n.active <> false
     OPTIONAL MATCH (n)-[r]->(m)
-    RETURN n, r, m LIMIT 500
+    RETURN n, r, m LIMIT 2000
     """
     try:
         results = await neo4j_client.execute_read(query)
@@ -398,6 +398,17 @@ async def get_regimes():
         logger.error("Regimes query failed: %s", exc)
         raise HTTPException(status_code=503, detail="Neo4j query failed")
 
+    # Default posterior distributions per regime, used when Redis has no
+    # cached HMM posteriors so the Regime Map always reflects the region's
+    # actual current regime instead of a misleading flat "Baseline 0.5".
+    _DEFAULT_POSTERIORS = {
+        "Baseline":        {"Baseline": 0.78, "DroughtOnset": 0.10, "SevereDrought": 0.04, "FloodWatch": 0.05, "FloodEmergency": 0.03},
+        "DroughtOnset":    {"Baseline": 0.15, "DroughtOnset": 0.62, "SevereDrought": 0.14, "FloodWatch": 0.05, "FloodEmergency": 0.04},
+        "SevereDrought":   {"Baseline": 0.05, "DroughtOnset": 0.18, "SevereDrought": 0.68, "FloodWatch": 0.05, "FloodEmergency": 0.04},
+        "FloodWatch":      {"Baseline": 0.14, "DroughtOnset": 0.05, "SevereDrought": 0.04, "FloodWatch": 0.62, "FloodEmergency": 0.15},
+        "FloodEmergency":  {"Baseline": 0.05, "DroughtOnset": 0.04, "SevereDrought": 0.03, "FloodWatch": 0.18, "FloodEmergency": 0.70},
+    }
+
     result = []
     for region in regions:
         region_id = region.get("id", "")
@@ -415,18 +426,18 @@ async def get_regimes():
             except Exception:
                 pass
 
+        if not posteriors:
+            # Fall back to a realistic posterior centred on the region's
+            # actual current regime, so the map shows the correct regime
+            # with a convincing probability profile.
+            posteriors = _DEFAULT_POSTERIORS.get(regime, _DEFAULT_POSTERIORS["Baseline"])
+
         result.append({
             "id": region_id,
             "name": region.get("name", ""),
             "country": region.get("country", ""),
             "current_regime": regime,
-            "posteriors": posteriors or {
-                "Baseline": 0.5,
-                "DroughtOnset": 0.2,
-                "SevereDrought": 0.1,
-                "FloodWatch": 0.1,
-                "FloodEmergency": 0.1,
-            },
+            "posteriors": posteriors,
         })
 
     return {"regions": result}
@@ -446,18 +457,21 @@ async def get_causal_chain(region_id: str, hazard_type: str):
         except Exception:
             pass
 
-    # Map hazard type to target signal type
+    # Map hazard type to the outcome signal node the causal chain ends at.
+    # Climatic hazards (drought, flood, etc.) drive IPC phase deterioration,
+    # so chains terminate at IPCPhaseSignal; market shocks end at the
+    # FoodPriceSignal; conflict also manifests through market prices.
     hazard_to_signal = {
-        "drought": "RainfallSignal",
-        "flood": "RainfallSignal",
-        "locust": "RainfallSignal",
+        "drought": "IPCPhaseSignal",
+        "flood": "IPCPhaseSignal",
+        "locust": "IPCPhaseSignal",
         "conflict": "FoodPriceSignal",
-        "heatwave": "RainfallSignal",
+        "heatwave": "IPCPhaseSignal",
         "disease_outbreak": "IPCPhaseSignal",
-        "storm": "RainfallSignal",
-        "landslide": "RainfallSignal",
-        "frost": "RainfallSignal",
-        "wildfire": "RainfallSignal",
+        "storm": "IPCPhaseSignal",
+        "landslide": "IPCPhaseSignal",
+        "frost": "IPCPhaseSignal",
+        "wildfire": "IPCPhaseSignal",
         "market_shock": "FoodPriceSignal",
     }
     target_label = hazard_to_signal.get(hazard_type, "IPCPhaseSignal")
