@@ -101,10 +101,16 @@ async def _download_csv(url: str) -> Optional[str]:
 
 
 def _parse_ndvi_csv(csv_text: str) -> list[dict]:
-    """Parse a simple CSV into rows keyed by region.
+    """Parse a WFP/HDX NDVI CSV into rows.
 
-    Expects at least a region/admin column and an NDVI column. Returns a
-    list of dicts with keys: region, ndvi, date (if present).
+    The WFP NDVI subnational datasets use columns like:
+      date, adm_level, adm_id, PCODE, n_pixels, vim, vim_avg, viq
+
+    `vim` is the smoothed NDVI value (0-1). Each file is country-level,
+    so rows are aggregated and the `region` field is set to the caller's
+    ISO3 fallback for country-level mapping.
+
+    Returns a list of dicts with keys: region (iso3), ndvi, date.
     """
     import csv
     import io
@@ -113,26 +119,44 @@ def _parse_ndvi_csv(csv_text: str) -> list[dict]:
     if not rows:
         return []
 
-    # Find candidate columns case-insensitively
     headers = list(rows[0].keys())
-    region_col = next((h for h in headers if h.lower() in ("region", "admin1", "admin0", "country", "area")), None)
-    ndvi_col = next((h for h in headers if "ndvi" in h.lower()), None)
-    date_col = next((h for h in headers if h.lower() in ("date", "period", "time")), None)
+    header_lower = {h.lower(): h for h in headers}
 
-    if not region_col or not ndvi_col:
+    # NDVI value column — WFP uses `vim` (smoothed NDVI); fall back to any
+    # header containing "ndvi" or "vim".
+    ndvi_col = None
+    if "vim" in header_lower:
+        ndvi_col = header_lower["vim"]
+    else:
+        ndvi_col = next(
+            (h for h in headers if "ndvi" in h.lower() or h.lower() == "vim"),
+            None,
+        )
+
+    # Date column
+    date_col = next(
+        (h for h in headers if h.lower() in ("date", "period", "time")),
+        None,
+    )
+
+    if not ndvi_col:
         return []
 
     parsed = []
     for row in rows:
-        region = (row.get(region_col) or "").strip().lower()
         try:
             ndvi = float(row.get(ndvi_col))
         except (TypeError, ValueError):
             continue
-        if not region or not (0 <= ndvi <= 1):
-            continue
+        # WFP NDVI values are scaled 0-1
+        if not (0 <= ndvi <= 1):
+            # Some datasets scale 0-100
+            if 0 <= ndvi <= 100:
+                ndvi = ndvi / 100.0
+            else:
+                continue
         parsed.append({
-            "region": region,
+            "region": "",  # filled by caller using ISO3 fallback
             "ndvi": ndvi,
             "date": (row.get(date_col) or "").strip() if date_col else "",
         })
@@ -140,8 +164,27 @@ def _parse_ndvi_csv(csv_text: str) -> list[dict]:
 
 
 def _map_to_region(name: str) -> Optional[str]:
-    """Map a parsed admin/region name to an IGAD region_id."""
-    name = name.lower()
+    """Map a parsed admin/region name or ISO3 code to an IGAD region_id."""
+    name = name.strip().lower()
+
+    # Direct ISO3 mapping
+    iso3_map = {
+        "eth": "region_ethiopia",
+        "ken": "region_kenya",
+        "som": "region_somalia",
+        "sdn": "region_sudan",
+        "ssd": "region_south_sudan",
+        "uga": "region_uganda",
+        "dji": "region_djibouti",
+        "eri": "region_eritrea",
+        "tza": "region_tanzania",
+        "bdi": "region_burundi",
+        "rwa": "region_rwanda",
+    }
+    if name in iso3_map:
+        return iso3_map[name]
+
+    # Map by country name (substring match)
     mapping = {
         "ethiopia": "region_ethiopia",
         "kenya": "region_kenya",
@@ -202,15 +245,39 @@ async def fetch_all_regions() -> dict:
                 logger.warning("No parseable NDVI rows found for %s", iso3)
                 continue
 
-            # Group by region, take the latest value per region
+            # Aggregate by date: take the average NDVI across admin areas for
+            # the latest date, mapped to the country-level region.
+            region_id = _map_to_region(iso3)
+            if not region_id:
+                logger.warning("No region mapping for ISO3 %s — skipping", iso3)
+                continue
+
+            # Group rows by date and compute the average per date
+            from collections import defaultdict
+            by_date = defaultdict(list)
             for row in rows:
-                region_id = _map_to_region(row["region"])
-                if not region_id:
-                    continue
-                if region_id not in latest_by_region:
-                    latest_by_region[region_id] = row
-                elif row["date"] > latest_by_region[region_id]["date"]:
-                    latest_by_region[region_id] = row
+                by_date[row["date"]].append(row["ndvi"])
+
+            if not by_date:
+                logger.warning("No dated NDVI rows found for %s", iso3)
+                continue
+
+            # Take the latest date (max string works for YYYY-MM-DD)
+            latest_date = max(by_date.keys())
+            latest_ndvi = sum(by_date[latest_date]) / len(by_date[latest_date])
+
+            if region_id not in latest_by_region:
+                latest_by_region[region_id] = {
+                    "region": region_id,
+                    "ndvi": latest_ndvi,
+                    "date": latest_date,
+                }
+            elif latest_date > latest_by_region[region_id]["date"]:
+                latest_by_region[region_id] = {
+                    "region": region_id,
+                    "ndvi": latest_ndvi,
+                    "date": latest_date,
+                }
 
         for region_id, row in latest_by_region.items():
             summary["total"] += 1

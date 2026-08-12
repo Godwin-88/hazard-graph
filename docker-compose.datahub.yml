@@ -1,0 +1,154 @@
+# DataHub Quickstart for HazardGraph
+# Run: docker compose -f docker-compose.datahub.yml up -d
+# UI:  http://localhost:9002
+# GMS: http://localhost:8080
+
+services:
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: datahub-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: datahub-kafka
+    ports:
+      - "59092:59092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:59092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    depends_on:
+      - zookeeper
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.22
+    container_name: datahub-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+  mysql:
+    image: mysql:8.0
+    container_name: datahub-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: datahub
+      MYSQL_DATABASE: datahub
+      MYSQL_USER: datahub
+      MYSQL_PASSWORD: datahub
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  datahub-gms:
+    image: acryldata/datahub-gms:v0.14.0
+    container_name: datahub-gms
+    ports:
+      - "8080:8080"
+    environment:
+      - EBEAN_DATASOURCE_USERNAME=datahub
+      - EBEAN_DATASOURCE_PASSWORD=datahub
+      - EBEAN_DATASOURCE_HOST=mysql:3306
+      - EBEAN_DATASOURCE_URL=jdbc:mysql://mysql:3306/datahub?verifyServerCertificate=false&useSSL=true&useUnicode=yes&characterEncoding=UTF-8
+      - ELASTICSEARCH_HOST=elasticsearch
+      - ELASTICSEARCH_PORT=9200
+      - NEO4J_HOST=http://datahub-graph-service:7474
+      - NEO4J_URI=bolt://datahub-graph-service:7687
+      - NEO4J_USERNAME=neo4j
+      - NEO4J_PASSWORD=datahub123
+      - KAFKA_BOOTSTRAP_SERVER=kafka:29092
+      - DATAHUB_SECRET=hazardgraph-datahub-secret
+      - MAE_CONSUMER_ENABLED=true
+      - MCE_CONSUMER_ENABLED=true
+    depends_on:
+      - elasticsearch
+      - kafka
+      - mysql
+
+  datahub-graph-service:
+    image: neo4j:5.21-community
+    container_name: datahub-graph-service
+    environment:
+      NEO4J_AUTH: neo4j/datahub123
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_memory_heap_max__size: 512M
+      NEO4J_dbms_security_auth__minimum__password__length: 5
+    ports:
+      - "7475:7474"
+      - "7688:7687"
+    volumes:
+      - datahub_graph_data:/data
+
+  datahub-frontend:
+    image: acryldata/datahub-frontend-react:v0.14.0
+    container_name: datahub-frontend
+    ports:
+      - "9002:9002"
+    environment:
+      - DATAHUB_GMS_HOST=datahub-gms
+      - DATAHUB_GMS_PORT=8080
+      - AUTH_OIDC_ENABLED=false
+      - DATAHUB_SECRET=hazardgraph-datahub-secret
+      - DATAHUB_PLAY_MEM_BUFFER_SIZE=10MB
+      - DATAHUB_APP_VERSION=1.0
+      - DATAHUB_AUTHENTICATION_SYSTEM_CLIENT_ID=datahub
+      - DATAHUB_AUTHENTICATION_SYSTEM_CLIENT_SECRET=datahub
+      - DATAHUB_AUTHENTICATION_SYSTEM_CLIENT_CREDENTIALS_ENABLED=true
+      - DATAHUB_AUTHENTICATION_SYSTEM_CLIENT_CREDENTIALS_DEFAULT_ACCESS_TOKEN=token
+      - DATAHUB_AUTHENTICATION_SYSTEM_CLIENT_CREDENTIALS_DEFAULT_ACCESS_TOKEN_EXPIRATION_TIME=3600
+      - DATAHUB_AUTHENTICATION_SYSTEM_CLIENT_CREDENTIALS_DEFAULT_ACCESS_TOKEN_TYPE=Bearer
+      - DATAHUB_AUTHENTICATION_SYSTEM_CLIENT_CREDENTIALS_DEFAULT_ACCESS_TOKEN_ACTIVE=true
+    depends_on:
+      - datahub-gms
+
+  datahub-mae-consumer:
+    image: acryldata/datahub-mae-consumer:v0.14.0
+    container_name: datahub-mae-consumer
+    environment:
+      - KAFKA_BOOTSTRAP_SERVER=kafka:29092
+      - EBEAN_DATASOURCE_USERNAME=datahub
+      - EBEAN_DATASOURCE_PASSWORD=datahub
+      - EBEAN_DATASOURCE_URL=jdbc:mysql://mysql:3306/datahub?verifyServerCertificate=false&useSSL=true&useUnicode=yes&characterEncoding=UTF-8
+      - ELASTICSEARCH_HOST=elasticsearch
+      - ELASTICSEARCH_PORT=9200
+      - NEO4J_HOST=http://datahub-graph-service:7474
+      - NEO4J_URI=bolt://datahub-graph-service:7687
+      - NEO4J_USERNAME=neo4j
+      - NEO4J_PASSWORD=datahub123
+      - DATAHUB_SECRET=hazardgraph-datahub-secret
+    depends_on:
+      - datahub-gms
+
+  datahub-mce-consumer:
+    image: acryldata/datahub-mce-consumer:v0.14.0
+    container_name: datahub-mce-consumer
+    environment:
+      - KAFKA_BOOTSTRAP_SERVER=kafka:29092
+      - EBEAN_DATASOURCE_USERNAME=datahub
+      - EBEAN_DATASOURCE_PASSWORD=datahub
+      - EBEAN_DATASOURCE_URL=jdbc:mysql://mysql:3306/datahub?verifyServerCertificate=false&useSSL=true&useUnicode=yes&characterEncoding=UTF-8
+      - DATAHUB_SECRET=hazardgraph-datahub-secret
+    depends_on:
+      - datahub-gms
+
+volumes:
+  es_data:
+  mysql_data:
+  datahub_graph_data:

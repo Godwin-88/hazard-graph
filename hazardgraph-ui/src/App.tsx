@@ -8,6 +8,7 @@ import GraphExplorer from './pages/GraphExplorer';
 import AlertReview from './pages/AlertReview';
 import Analytics from './pages/Analytics';
 import ScenarioSimulator from './pages/ScenarioSimulator';
+import DataHub from './pages/DataHub';
 import Login from './pages/Login';
 import { AssistantChat } from './components/assistant/AssistantChat';
 
@@ -89,6 +90,17 @@ export default function App() {
                 <ProtectedRoute>
                   <Layout>
                     <ScenarioSimulator />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/datahub"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <DataHub />
                   </Layout>
                 </ProtectedRoute>
               }

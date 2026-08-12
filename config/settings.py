@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
 
+    # DataHub
+    datahub_gms_url: str = "http://localhost:8080"
+    datahub_token: str = ""
+
     # Africa's Talking
     at_username: str = "sandbox"
     at_api_key: str = ""
@@ -41,6 +45,9 @@ class Settings(BaseSettings):
 
     # IPC acute food insecurity API (register at ipcinfo.org for a key)
     ipc_api_key: str = ""
+
+    # FAOSTAT food price indices API (register at fao.org for a key)
+    faostat_api_key: str = ""
 
     # FEWS NET Data Warehouse — auth is at the ROOT, data under /api/
     fews_net_username: str = ""
@@ -51,10 +58,11 @@ class Settings(BaseSettings):
     wfp_client_id: str = ""
     wfp_client_secret: str = ""
 
-    # ACLED conflict data (free account at developer.acleddata.com)
-    acled_key: str = ""
+    # ACLED conflict data (free account at acleddata.com)
     acled_email: str = ""
-    acled_base_url: str = "https://api.acleddata.com/acled/read"
+    acled_password: str = ""
+    acled_base_url: str = "https://acleddata.com/api/acled/read"
+    acled_token_url: str = "https://acleddata.com/oauth/token"
 
     # HDX / WFP NDVI — per-country packages (e.g. eth-ndvi-subnational)
     hdx_ndvi_url: str = "https://data.humdata.org/dataset/wfp-ndvi"

@@ -30,7 +30,8 @@ from graph.lineage import record_lineage, update_data_source_stats
 logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────
-ICPAC_RSS_URL = "https://www.icpac.net/feed/"
+# The /feed/ path returns 404; the working WordPress RSS2 endpoint is ?feed=rss2
+ICPAC_RSS_URL = "https://www.icpac.net/?feed=rss2"
 ICPAC_SOURCE_NAME = "ICPAC RSS Feed"
 ICPAC_SOURCE_ID = make_data_source_id(ICPAC_SOURCE_NAME)
 

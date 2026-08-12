@@ -64,6 +64,55 @@ MAX_RETRIES = 3
 BASE_DELAY_S = 2.0
 
 
+# ── Date normalisation helper ─────────────────────────────
+
+
+def _normalise_date(raw_date) -> str:
+    """Normalise a DataBridges date value to YYYY-MM-DD.
+
+    Handles ISO datetime strings, YYYY-MM, YYYY, and numeric YYYYMM.
+    Returns a safe default if the value cannot be parsed.
+    """
+    if raw_date is None:
+        return "2024-01-01"
+
+    s = str(raw_date).strip()
+    if not s:
+        return "2024-01-01"
+
+    # Numeric YYYYMM (e.g. 202608) or YYYY (e.g. 2026)
+    if s.isdigit():
+        if len(s) == 8:
+            return f"{s[:4]}-{s[4:6]}-01"
+        if len(s) == 4:
+            return f"{s}-01-01"
+        # Could be a Unix timestamp — fall back to safe default
+        return "2024-01-01"
+
+    # ISO datetime or date string — take the first 10 chars (YYYY-MM-DD)
+    candidate = s[:10]
+    # Validate the candidate is a plausible date
+    try:
+        datetime.strptime(candidate, "%Y-%m-%d")
+        return candidate
+    except ValueError:
+        pass
+
+    # YYYY-MM only
+    if len(s) >= 7:
+        try:
+            datetime.strptime(s[:7], "%Y-%m")
+            return f"{s[:7]}-01"
+        except ValueError:
+            pass
+
+    # YYYY only
+    if len(s) >= 4 and s[:4].isdigit():
+        return f"{s[:4]}-01-01"
+
+    return "2024-01-01"
+
+
 # ── OAuth2 Token Manager ──────────────────────────────────
 
 
@@ -240,10 +289,10 @@ async def fetch_country_prices(iso3: str) -> list[dict]:
         prev_price = previous.get("mpPrice", previous.get("price", 0)) if previous else price_usd
 
         market = current.get("marketName", current.get("market", "unknown"))
-        # Date format: "YYYY-MM-DD" or "YYYY-MM" or "YYYY"
-        raw_date = str(current.get("mpDate", current.get("date", current.get("mpYear", "2024"))))
-        # Normalise to YYYY-MM-DD if needed
-        date_str = raw_date[:10] if len(raw_date) >= 10 else f"{raw_date[:4]}-01-01"
+        # Date format: "YYYY-MM-DD" or "YYYY-MM" or "YYYY" or timestamp
+        raw_date = current.get("mpDate", current.get("date", current.get("mpYear", "2024")))
+        # Normalise to YYYY-MM-DD safely
+        date_str = _normalise_date(raw_date)
 
         pct_change_30d = 0.0
         if prev_price > 0:
@@ -294,14 +343,24 @@ async def fetch_all_countries() -> dict:
             cache_key = f"wfp:{iso3}"
 
             # Check cache
-            cached = await redis_client.get(cache_key)
-            if cached:
-                try:
-                    prices = json.loads(cached)
-                except Exception:
+            try:
+                cached = await redis_client.get(cache_key)
+            except Exception as exc:
+                logger.warning("Redis cache read failed for %s: %s", cache_key, exc)
+                cached = None
+
+            try:
+                if cached:
+                    try:
+                        prices = json.loads(cached)
+                    except Exception:
+                        prices = await fetch_country_prices(iso3)
+                else:
                     prices = await fetch_country_prices(iso3)
-            else:
-                prices = await fetch_country_prices(iso3)
+            except Exception as exc:
+                summary["errors"] += 1
+                logger.error("WFP fetch failed for %s: %s", iso3, exc)
+                continue
 
             if not prices:
                 continue

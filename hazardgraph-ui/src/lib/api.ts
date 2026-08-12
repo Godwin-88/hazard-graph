@@ -205,12 +205,27 @@ export interface JobRunRecord {
   error_message: string | null
 }
 
+export interface JobErrorLog {
+  id: string
+  run_id: string
+  job_name: string
+  error_type: string
+  error_message: string
+  traceback: string | null
+  node_name: string | null
+  created_at: string | null
+}
+
 export async function fetchPipelineStatus(): Promise<{ models: PipelineModel[] }> {
   return fetchJson<{ models: PipelineModel[] }>(`${BASE_URL}/api/v1/pipeline/status`)
 }
 
 export async function fetchJobHistory(): Promise<{ jobs: JobRunRecord[] }> {
   return fetchJson<{ jobs: JobRunRecord[] }>(`${BASE_URL}/api/v1/pipeline/jobs`)
+}
+
+export async function fetchJobErrors(runId: string): Promise<{ errors: JobErrorLog[] }> {
+  return fetchJson<{ errors: JobErrorLog[] }>(`${BASE_URL}/api/v1/pipeline/jobs/${encodeURIComponent(runId)}/errors`)
 }
 
 export async function runPipelineScope(
@@ -247,5 +262,101 @@ export async function sendAssistantMessage(
     body: JSON.stringify({ message, context }),
   })
   if (!res.ok) throw new Error(`Assistant request failed: ${res.status}`)
+  return res.json()
+}
+
+// ── DataHub / Agent ──────────────────────────────────────
+
+export interface ModelHealth {
+  id: string
+  name: string
+  urn_name: string
+  category: string
+  technique: string
+  output_description: string
+  update_frequency: string
+  brier_score: number | null
+  bma_weight: number | null
+  upstream_datasets: string[] | null
+  datahub_urn: string | null
+}
+
+export interface FreshnessStatus {
+  status: 'fresh' | 'stale' | 'unknown'
+  last_updated: string | null
+  age_hours?: number
+  max_age_hours: number
+  is_fresh: boolean | null
+  note?: string
+}
+
+export interface LineageStep {
+  step: number
+  entity: string
+  type: string
+  last_updated?: string
+  freshness_hours?: number
+  models_contributing?: string[]
+  execution_time?: string
+  posterior_weights?: string
+  formula?: string
+  architecture?: string
+  channel?: string
+}
+
+export interface AlertLineage {
+  alert_id: string
+  lineage_chain: LineageStep[]
+  datahub_lineage_url: string
+}
+
+export interface DatahubSyncResult {
+  status: string
+  datasets: number
+  models: number
+  lineage_edges: number
+  assertions: number
+}
+
+export interface AgentQueryResult {
+  response: string
+  context_used: Record<string, unknown> | null
+  freshness: Record<string, FreshnessStatus> | null
+  model_health: { models: ModelHealth[] } | null
+  lineage: AlertLineage | null
+}
+
+export async function fetchModelHealth(): Promise<{ models: ModelHealth[] }> {
+  return fetchJson<{ models: ModelHealth[] }>(`${BASE_URL}/api/v1/datahub/model-health`)
+}
+
+export async function fetchPipelineFreshness(): Promise<{ datasets: Record<string, FreshnessStatus> }> {
+  return fetchJson<{ datasets: Record<string, FreshnessStatus> }>(`${BASE_URL}/api/v1/datahub/pipeline-freshness`)
+}
+
+export async function fetchAlertLineage(alertId: string): Promise<AlertLineage> {
+  return fetchJson<AlertLineage>(`${BASE_URL}/api/v1/datahub/lineage/${encodeURIComponent(alertId)}`)
+}
+
+export async function triggerDatahubSync(): Promise<DatahubSyncResult> {
+  const res = await fetch(`${BASE_URL}/api/v1/datahub/sync`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  })
+  if (!res.ok) throw new Error(`DataHub sync failed: ${res.status}`)
+  return res.json()
+}
+
+export async function queryHazardAgent(
+  query: string,
+  region?: string,
+  alertId?: string,
+): Promise<AgentQueryResult> {
+  const res = await fetch(`${BASE_URL}/api/v1/agent/query`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ query, region, alert_id: alertId }),
+  })
+  if (!res.ok) throw new Error(`Agent request failed: ${res.status}`)
   return res.json()
 }

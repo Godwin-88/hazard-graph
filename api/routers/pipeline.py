@@ -8,6 +8,7 @@ immediately with a run_id that the UI can poll.
 
 import asyncio
 import logging
+import traceback
 import uuid
 from datetime import datetime, timezone
 
@@ -85,6 +86,38 @@ async def _log_job_finish(run_id: str, status: str, records: int = 0, error: str
         await session.commit()
 
 
+async def _log_job_error(
+    run_id: str,
+    job_name: str,
+    exc: Exception,
+    node_name: str | None = None,
+) -> None:
+    """Insert a structured error log row for a failed job run.
+
+    Captures the error type, message, full traceback, and (for DAG runs)
+    the specific node that failed. The UI renders this as a detailed,
+    actionable error view.
+    """
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    async with async_session_factory() as session:
+        await session.execute(
+            text(
+                "INSERT INTO job_error_logs "
+                "(id, run_id, job_name, error_type, error_message, traceback, node_name, created_at) "
+                "VALUES (gen_random_uuid(), :run_id, :job_name, :etype, :emsg, :tb, :node, NOW())"
+            ),
+            {
+                "run_id": run_id,
+                "job_name": job_name,
+                "etype": type(exc).__name__,
+                "emsg": str(exc),
+                "tb": tb,
+                "node": node_name,
+            },
+        )
+        await session.commit()
+
+
 async def _run_model_in_background(run_id: str, job_name: str, func_name: str) -> None:
     """Execute a single model job as a background task, logging to JobRun."""
     try:
@@ -98,6 +131,7 @@ async def _run_model_in_background(run_id: str, job_name: str, func_name: str) -
     except Exception as exc:
         logger.error("Model job %s failed: %s", job_name, exc)
         await _log_job_finish(run_id, "failed", error=str(exc))
+        await _log_job_error(run_id, job_name, exc)
 
 
 async def _run_full_dag_in_background(run_id: str, job_name: str, scope: str, models: list[str] | None) -> None:
@@ -130,6 +164,7 @@ async def _run_full_dag_in_background(run_id: str, job_name: str, scope: str, mo
     except Exception as exc:
         logger.error("Pipeline run failed: %s", exc)
         await _log_job_finish(run_id, "failed", error=str(exc))
+        await _log_job_error(run_id, job_name, exc)
 
 
 @router.post("/run", dependencies=[Depends(require_officer)])
@@ -199,6 +234,41 @@ async def get_job_history(limit: int = 50):
                 "duration_seconds": r[5],
                 "records_processed": r[6],
                 "error_message": r[7],
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.get("/jobs/{run_id}/errors", dependencies=[Depends(require_officer)])
+async def get_job_errors(run_id: str):
+    """Return structured error logs for a specific job run.
+
+    Used by the UI to render a detailed error view (error type, message,
+    full traceback, and the DAG node that failed) for a failed model run.
+    """
+    async with async_session_factory() as session:
+        result = await session.execute(
+            text(
+                "SELECT id, run_id, job_name, error_type, error_message, "
+                "       traceback, node_name, created_at "
+                "FROM job_error_logs WHERE run_id = :run_id "
+                "ORDER BY created_at DESC",
+            ),
+            {"run_id": run_id},
+        )
+        rows = result.fetchall()
+    return {
+        "errors": [
+            {
+                "id": str(r[0]),
+                "run_id": str(r[1]),
+                "job_name": r[2],
+                "error_type": r[3],
+                "error_message": r[4],
+                "traceback": r[5],
+                "node_name": r[6],
+                "created_at": r[7].isoformat() if r[7] else None,
             }
             for r in rows
         ]

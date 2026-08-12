@@ -637,9 +637,63 @@ graph LR
 
 ---
 
+## DataHub Integration
+
+HazardGraph uses [DataHub](https://datahubproject.io) as its metadata, 
+lineage, and data quality intelligence layer.
+
+### What DataHub Tracks
+
+| Entity Type | Count | Description |
+|---|---|---|
+| Datasets | 9 | Raw data sources + model output tables |
+| MLModels | 14 | All quantitative models M1–M14 |
+| Lineage Edges | 38 | Full provenance from satellite → SMS |
+| Quality Assertions | 5 | Freshness, volume, and range checks |
+
+### Lineage Chain
+
+Every dispatched alert has an 8-step provenance chain:
+
+```
+CHIRPS Rainfall ──► CIR SDE (M1) ──┐
+MODIS NDVI ──────► CNN NDVI (M6) ──┤
+IPC Reports ─────► XGBoost (M5) ───┤──► BMA (M12) ──► Kelly (M13) ──► GNN-PPO (M14) ──► Alert ──► SMS
+WFP Prices ──────► BiLSTM (M4) ────┤
+ICPAC RSS ───────► VARLiNGAM (M8) ─┘
+```
+
+### The HazardGraph Agent
+
+The DataHub-powered LangGraph agent answers operational questions 
+grounded in pipeline metadata:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/agent/query \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Why was the Mandera alert dispatched this week?"}'
+```
+
+### DataHub Quick Start
+
+```bash
+# Start DataHub alongside HazardGraph
+docker compose -f docker-compose.datahub.yml up -d
+
+# Sync HazardGraph metadata to DataHub
+curl -X POST http://localhost:8000/api/v1/datahub/sync \
+  -H "Authorization: Bearer $TOKEN"
+
+# Open DataHub UI
+open http://localhost:9002
+```
+
+---
+
 ## Scheduler (APScheduler)
 
-The system runs **17 cron jobs** weekly for automated ML inference:
+The system runs **18 cron jobs** weekly for automated ML inference:
 
 | Time (UTC) | Job | Description |
 |---|---|---|
@@ -661,6 +715,7 @@ The system runs **17 cron jobs** weekly for automated ML inference:
 | 1st of month 00:00 | `run_louvain` | M10: Community detection |
 | 1st of month 01:00 | `run_ppo_training` | M14: GNN-PPO training |
 | Sun 20:00 | `save_graph_snapshot` | Weekly graph state snapshot |
+| Mon 08:00 | `datahub_sync` | DataHub metadata sync (models + lineage) |
 
 ---
 

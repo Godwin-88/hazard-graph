@@ -537,6 +537,17 @@ def register_jobs() -> None:
         max_instances=1,
     )
 
+    # DataHub metadata sync: weekly Monday 08:00 EAT (05:00 UTC)
+    scheduler.add_job(
+        _run_datahub_sync,
+        trigger=CronTrigger(day_of_week="mon", hour=5, minute=0, timezone="UTC"),
+        id="datahub_sync",
+        name="DataHub Metadata Sync",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
     logger.info("Registered %d scheduled jobs", len(scheduler.get_jobs()))
 
 
@@ -761,6 +772,25 @@ async def _run_ppo_training() -> None:
         logger.info("PPO training complete")
     except Exception as exc:
         logger.error("PPO training failed: %s", exc)
+        await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
+
+
+async def _run_datahub_sync() -> None:
+    """Weekly DataHub metadata sync — datasets, models, lineage, assertions."""
+    job_name = "datahub_sync"
+    logger.info("Starting scheduled job: %s", job_name)
+    try:
+        from hazarddatahub.sync_job import sync_all
+
+        summary = sync_all()
+        await _log_job_run(
+            job_name=job_name,
+            status="completed",
+            records_processed=summary.get("models", 0),
+        )
+        logger.info("DataHub sync complete: %s", summary)
+    except Exception as exc:
+        logger.error("DataHub sync failed: %s", exc)
         await _log_job_run(job_name=job_name, status="failed", error_message=str(exc))
 
 

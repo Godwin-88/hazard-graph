@@ -4,14 +4,19 @@ Fetches conflict events from the ACLED API (free account, instant access)
 for IGAD countries. Aggregates events per week per region and writes
 ConflictSignal nodes to Neo4j with DataSource lineage.
 
-Requires ACLED_API_KEY and ACLED_EMAIL in .env (register free at
-developer.acleddata.com).
+Uses the OAuth token flow:
+  1. POST to https://acleddata.com/oauth/token with email/password
+  2. Receive access_token (24h) + refresh_token (14d)
+  3. Send `Authorization: Bearer <token>` on data requests
+
+Requires ACLED_EMAIL and ACLED_PASSWORD in .env (register free at
+https://acleddata.com).
 """
 
 import asyncio
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -35,6 +40,9 @@ SOURCE_ID = make_data_source_id(SOURCE_NAME)
 MAX_RETRIES = 3
 BASE_DELAY_S = 2.0
 
+# Redis key for caching the OAuth access token
+ACLED_TOKEN_CACHE_KEY = "acled:access_token"
+
 # ISO3 → region_id mapping (matches ipc_fetcher)
 ISO3_TO_REGION = {
     "ETH": "region_ethiopia",
@@ -51,26 +59,109 @@ ISO3_TO_REGION = {
 }
 
 
+async def _get_access_token() -> Optional[str]:
+    """Obtain an ACLED OAuth access token, caching it in Redis.
+
+    Returns the bearer token string, or None on failure.
+    """
+    # 1. Try cached token first
+    if redis_client:
+        try:
+            cached = await redis_client.get(ACLED_TOKEN_CACHE_KEY)
+            if cached:
+                logger.debug("Using cached ACLED access token")
+                return cached
+        except Exception as exc:
+            logger.warning("Failed to read cached ACLED token: %s", exc)
+
+    # 2. Request a fresh token
+    email = settings.acled_email
+    password = settings.acled_password
+    if not email or not password:
+        logger.warning("ACLED credentials missing — set ACLED_EMAIL/ACLED_PASSWORD in .env")
+        return None
+
+    payload = {
+        "username": email,
+        "password": password,
+        "grant_type": "password",
+        "client_id": "acled",
+        "scope": "authenticated",
+    }
+
+    async def _request_token():
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            response = await client.post(
+                settings.acled_token_url,
+                data=payload,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            response.raise_for_status()
+            return response.json()
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            token_data = await _request_token()
+            token = token_data.get("access_token")
+            if not token:
+                logger.error("ACLED token response missing access_token: %s", token_data)
+                return None
+
+            # Cache token (expires_in is 86400s = 24h; cache for 23h to be safe)
+            if redis_client:
+                try:
+                    await redis_client.set(
+                        ACLED_TOKEN_CACHE_KEY,
+                        token,
+                        ttl=token_data.get("expires_in", 86400) - 3600,
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to cache ACLED token: %s", exc)
+
+            logger.info("ACLED OAuth token obtained successfully")
+            return token
+
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (400, 401, 403):
+                logger.error(
+                    "ACLED OAuth auth failed (check ACLED_EMAIL/ACLED_PASSWORD in .env): %s",
+                    exc.response.text[:300],
+                )
+                return None
+            if attempt < MAX_RETRIES:
+                delay = BASE_DELAY_S * (2 ** (attempt - 1))
+                logger.warning("ACLED token attempt %d/%d failed: %s. Retry in %.1fs", attempt, MAX_RETRIES, exc, delay)
+                await asyncio.sleep(delay)
+            else:
+                logger.error("ACLED token request failed after %d attempts: %s", MAX_RETRIES, exc)
+                return None
+        except Exception as exc:
+            logger.error("ACLED token request error: %s", exc)
+            return None
+    return None
+
+
 async def _fetch_conflict_events(
-    key: str,
-    email: str,
+    token: str,
     country: str,
     start_date: str,
     end_date: str,
 ) -> Optional[list]:
-    """Fetch conflict events for a set of countries from ACLED."""
+    """Fetch conflict events for a set of countries from ACLED using Bearer auth."""
     params = {
-        "key": key,
-        "email": email,
         "country": country,
         "event_date": f"{start_date}|{end_date}",
         "event_date_where": "BETWEEN",
         "limit": 5000,
     }
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
 
     async def _fetch():
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            response = await client.get(settings.acled_base_url, params=params)
+            response = await client.get(settings.acled_base_url, params=params, headers=headers)
             response.raise_for_status()
             data = response.json()
             return data.get("data", data if isinstance(data, list) else [])
@@ -80,7 +171,20 @@ async def _fetch_conflict_events(
             return await _fetch()
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (401, 403):
-                logger.error("ACLED auth failed — check ACLED_API_KEY/ACLED_EMAIL in .env")
+                # Token may have expired — invalidate cache and try once more
+                logger.warning("ACLED data request unauthorized — invalidating cached token")
+                if redis_client:
+                    try:
+                        await redis_client.delete(ACLED_TOKEN_CACHE_KEY)
+                    except Exception:
+                        pass
+                if attempt == 1:
+                    # Retry once with a fresh token
+                    new_token = await _get_access_token()
+                    if new_token:
+                        headers["Authorization"] = f"Bearer {new_token}"
+                        continue
+                logger.error("ACLED auth failed — check ACLED_EMAIL/ACLED_PASSWORD in .env")
                 return None
             if attempt < MAX_RETRIES:
                 delay = BASE_DELAY_S * (2 ** (attempt - 1))
@@ -164,10 +268,8 @@ async def fetch_conflict_data(lookback_weeks: int = 12) -> dict:
     """
     summary = {"total": 0, "success": 0, "failed": 0, "source_id": SOURCE_ID}
 
-    key = settings.acled_key
-    email = settings.acled_email
-    if not key or not email:
-        logger.warning("ACLED credentials missing — set ACLED_API_KEY/ACLED_EMAIL in .env")
+    if not settings.acled_email or not settings.acled_password:
+        logger.warning("ACLED credentials missing — set ACLED_EMAIL/ACLED_PASSWORD in .env")
         return summary
 
     try:
@@ -177,16 +279,21 @@ async def fetch_conflict_data(lookback_weeks: int = 12) -> dict:
             url=settings.acled_base_url,
         )
 
+        # Obtain OAuth token
+        token = await _get_access_token()
+        if not token:
+            summary["failed"] = 1
+            return summary
+
         # Fetch in one request for all IGAD countries
         countries = "|".join(ISO3_TO_REGION.keys())
         end = datetime.now(timezone.utc)
-        start = end.replace(hour=0, minute=0, second=0, microsecond=0)
-        # ACLED starts timezone-dependent; use a generous window
-        start = start.replace(year=end.year, month=end.month, day=end.day - (lookback_weeks * 7))
+        start = (end - timedelta(weeks=lookback_weeks)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
 
         events = await _fetch_conflict_events(
-            key,
-            email,
+            token,
             countries,
             start.strftime("%Y-%m-%d"),
             end.strftime("%Y-%m-%d"),

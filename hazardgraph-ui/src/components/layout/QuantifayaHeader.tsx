@@ -98,6 +98,9 @@ export function QuantifayaHeader() {
         <TermTooltip term="Alert Review">
           <NavLink href="/alerts" label="Alert Review" />
         </TermTooltip>
+        <TermTooltip term="DataHub & Agent">
+          <NavLink href="/datahub" label="DataHub & Agent" active={currentPath === '/datahub'} />
+        </TermTooltip>
       </nav>
 
       {/* Right: Clock + Status */}

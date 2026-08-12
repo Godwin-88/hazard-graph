@@ -13,5 +13,6 @@ import models.postgres.audit  # noqa: F401, E402
 import models.postgres.jobs  # noqa: F401, E402
 import models.postgres.causal  # noqa: F401, E402
 import models.postgres.risk  # noqa: F401, E402
+import models.postgres.performance  # noqa: F401, E402
 
 __all__ = ["Base"]

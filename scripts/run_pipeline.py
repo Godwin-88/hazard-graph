@@ -10,7 +10,7 @@ Triggers the complete data pipeline from real sources:
   6. NASA POWER climate ingestion (no key required)
   7. FAOSTAT food price index ingestion (no key required)
   8. WFP/HDX NDVI greenness ingestion (no key required)
-  9. ACLED conflict ingestion (requires ACLED_API_KEY/ACLED_EMAIL)
+  9. ACLED conflict ingestion (requires ACLED_EMAIL/ACLED_PASSWORD — OAuth)
   10. HMM climate regime detection
   11. SDE rainfall simulation
   12. VARLiNGAM causal discovery
@@ -121,7 +121,7 @@ async def run_pipeline():
     from ingestion.ndvi_fetcher import fetch_all_regions as ndvi_ingest
     await step("WFP/HDX NDVI Greenness Ingestion", ndvi_ingest(), timeout=180)
 
-    # 10. ACLED Conflict Ingestion (requires ACLED_API_KEY/ACLED_EMAIL)
+    # 10. ACLED Conflict Ingestion (requires ACLED_EMAIL/ACLED_PASSWORD — OAuth)
     from ingestion.acled_fetcher import fetch_conflict_data as acled_ingest
     await step("ACLED Conflict Ingestion", acled_ingest(), timeout=180)
 

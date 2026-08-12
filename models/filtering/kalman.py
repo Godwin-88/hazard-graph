@@ -6,8 +6,13 @@ F = [[1, 1], [0, 1]]  (constant velocity model)
 H = [1, 0]            (observe level only)
 """
 
+import logging
 import numpy as np
 from typing import Tuple, List
+
+from db.neo4j_client import neo4j_client
+
+logger = logging.getLogger(__name__)
 
 
 class KalmanSmoother:
@@ -83,3 +88,90 @@ class KalmanSmoother:
     def flag_anomaly(self, innovation: float, threshold: float = 2.5) -> bool:
         """Return True if |innovation| > threshold (data quality issue)."""
         return abs(innovation) > threshold
+
+    async def smooth_all(self) -> dict:
+        """Smooth SPI series for all regions and write back to Neo4j.
+
+        Queries all RainfallSignal nodes grouped by region, applies the
+        Kalman filter to each region's SPI series (ordered by date), and
+        updates the `spi_30d_smoothed` property on each node.
+
+        Returns a summary dict with counts.
+        """
+        summary = {"total": 0, "updated": 0, "failed": 0, "skipped": 0}
+
+        try:
+            # Fetch all rainfall signals ordered by region and date
+            rows = await neo4j_client.execute_read(
+                """
+                MATCH (rs:RainfallSignal)
+                RETURN rs.region_id AS region_id,
+                       rs.id AS signal_id,
+                       rs.spi_30d AS spi_30d,
+                       rs.date AS date
+                ORDER BY rs.region_id, rs.date ASC
+                """
+            )
+
+            # Group by region preserving chronological order
+            from collections import OrderedDict
+            by_region: "OrderedDict[str, list]" = OrderedDict()
+            for row in rows:
+                region_id = row.get("region_id")
+                if not region_id:
+                    continue
+                by_region.setdefault(region_id, []).append(row)
+
+            summary["total"] = len(rows)
+
+            for region_id, region_rows in by_region.items():
+                try:
+                    series = []
+                    for r in region_rows:
+                        try:
+                            series.append(float(r.get("spi_30d") or 0.0))
+                        except (TypeError, ValueError):
+                            series.append(0.0)
+
+                    if len(series) < 2:
+                        summary["skipped"] += 1
+                        continue
+
+                    # Apply Kalman smoothing to the full series
+                    smoothed = self.smooth_series(series)
+
+                    # Batch-write smoothed values in a single transaction
+                    updates = [
+                        {"id": r["signal_id"], "smoothed": round(value, 4)}
+                        for r, value in zip(region_rows, smoothed)
+                    ]
+                    if updates:
+                        await neo4j_client.execute_write(
+                            """
+                            UNWIND $updates AS u
+                            MATCH (rs:RainfallSignal {id: u.id})
+                            SET rs.spi_30d_smoothed = u.smoothed
+                            """,
+                            {"updates": updates},
+                        )
+                    summary["updated"] += len(region_rows)
+                    logger.info(
+                        "Kalman smoothed %d signals for %s",
+                        len(region_rows),
+                        region_id,
+                    )
+                except Exception as exc:
+                    summary["failed"] += 1
+                    logger.error("Kalman smoothing failed for %s: %s", region_id, exc)
+
+        except Exception as exc:
+            logger.error("Kalman smooth_all failed: %s", exc)
+
+        logger.info(
+            "Kalman smoothing complete: %d updated, %d failed, %d skipped (of %d rows)",
+            summary["updated"],
+            summary["failed"],
+            summary["skipped"],
+            summary["total"],
+        )
+        return summary

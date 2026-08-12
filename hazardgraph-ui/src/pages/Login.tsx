@@ -56,6 +56,12 @@ export default function Login() {
             </div>
           )}
 
+          {/* Cold-start hint */}
+          <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-amber-300">
+            Having trouble signing in? The server may be taking a nap after inactivity.
+            Try refreshing the page and signing in again — it should be ready within a few seconds.
+          </div>
+
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Info } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+import { ErrorLogModal } from '@/components/shared/ErrorLogModal'
 import {
   fetchPipelineStatus,
   fetchJobHistory,
@@ -66,6 +67,7 @@ export default function ModelRunner() {
   const [selectedRegion, setSelectedRegion] = useState('somalia')
   const [forecastData, setForecastData] = useState<Awaited<ReturnType<typeof fetchAllForecasts>> | null>(null)
   const [loadingForecast, setLoadingForecast] = useState(false)
+  const [errorJob, setErrorJob] = useState<{ runId: string; jobName: string } | null>(null)
 
   // Data queries for the four analytics panels
   const statusQuery = useQuery({ queryKey: ['pipeline-status'], queryFn: fetchPipelineStatus })
@@ -506,7 +508,14 @@ export default function ModelRunner() {
                         {j.status === 'queued' && 'Job is queued and waiting to start.'}
                       </div>
                     </div>
-                    {j.error_message && <span title={j.error_message} className="ml-1 text-red-400 cursor-help">⚠</span>}
+                    {j.error_message && (
+                      <button
+                        onClick={() => setErrorJob({ runId: j.id, jobName: j.job_name })}
+                        className="ml-1 inline-flex items-center gap-1 rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-400 hover:bg-red-500/20 transition-colors"
+                      >
+                        ⚠ View error
+                      </button>
+                    )}
                   </td>
                   <td className="py-2 px-2 text-right text-text-secondary">{j.records_processed ?? '—'}</td>
                   <td className="py-2 px-2 text-right text-text-secondary">{j.duration_seconds ?? '—'}</td>
@@ -522,6 +531,15 @@ export default function ModelRunner() {
           </table>
         </CardContent>
       </Card>
+
+      {/* Error log modal */}
+      {errorJob && (
+        <ErrorLogModal
+          runId={errorJob.runId}
+          jobName={errorJob.jobName}
+          onClose={() => setErrorJob(null)}
+        />
+      )}
 
       {/* Model registry grid */}
       <Card className="border-border/50 bg-[#12172B]">

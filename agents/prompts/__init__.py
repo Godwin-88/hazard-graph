@@ -1,0 +1,1 @@
+"""HazardGraph — Agent prompt templates."""

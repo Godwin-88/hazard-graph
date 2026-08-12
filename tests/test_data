@@ -1,0 +1,194 @@
+"""HazardGraph — DataHub integration unit tests.
+
+These tests verify the metadata registries, lineage graph, and
+client URN builders without requiring a running DataHub instance.
+"""
+
+import pytest
+
+
+class TestModelRegistry:
+    def test_all_14_models_registered(self):
+        from datahub.model_registry import MODEL_REGISTRY
+
+        assert len(MODEL_REGISTRY) == 14
+
+    def test_model_ids_are_m1_to_m14(self):
+        from datahub.model_registry import MODEL_REGISTRY
+
+        ids = [m.id for m in MODEL_REGISTRY]
+        assert ids == [f"M{i}" for i in range(1, 15)]
+
+    def test_every_model_has_required_fields(self):
+        from datahub.model_registry import MODEL_REGISTRY
+
+        for model in MODEL_REGISTRY:
+            assert model.name
+            assert model.urn_name
+            assert model.category
+            assert model.technique
+            assert model.output_description
+            assert model.update_frequency
+
+    def test_models_have_datahub_urns(self):
+        from datahub.entities import MODELS
+
+        assert len(MODELS) == 14
+        for model_id in [f"M{i}" for i in range(1, 15)]:
+            assert model_id in MODELS
+            assert MODELS[model_id].startswith("urn:li:mlModel:")
+
+    def test_upstream_datasets_reference_valid_names(self):
+        from datahub.model_registry import MODEL_REGISTRY
+
+        valid = {
+            "chirps_spi_horn_of_africa",
+            "modis_ndvi_horn_of_africa",
+            "wfp_food_prices_igad",
+            "ipc_phase_reports",
+            "icpac_rss_alerts",
+            "bma_risk_scores_weekly",
+            "all_model_outputs",
+            "alert_dispatch_log",
+            "farmer_sms_responses",
+        }
+        for model in MODEL_REGISTRY:
+            if model.upstream_datasets:
+                for ds in model.upstream_datasets:
+                    assert ds in valid, f"{model.id} references unknown dataset {ds}"
+
+
+class TestDatasetRegistry:
+    def test_all_9_datasets_registered(self):
+        from datahub.entities import DATASETS, DATASET_SPECS
+
+        assert len(DATASETS) == 9
+        assert len(DATASET_SPECS) == 9
+
+    def test_dataset_keys_match_specs(self):
+        from datahub.entities import DATASETS, DATASET_SPECS
+
+        spec_keys = {spec["key"] for spec in DATASET_SPECS}
+        assert spec_keys == set(DATASETS.keys())
+
+    def test_dataset_urns_are_valid(self):
+        from datahub.entities import DATASETS
+
+        for key, urn in DATASETS.items():
+            assert urn.startswith("urn:li:dataset:")
+            assert "PROD" in urn
+
+
+class TestLineage:
+    def test_all_31_lineage_edges(self):
+        from datahub.lineage import LINEAGE_EDGES
+
+        assert len(LINEAGE_EDGES) == 31
+
+    def test_lineage_edges_use_valid_urns(self):
+        from datahub.lineage import LINEAGE_EDGES
+        from datahub.entities import DATASETS, MODELS
+
+        all_urns = set(DATASETS.values()) | set(MODELS.values())
+        for upstream, downstream, _desc in LINEAGE_EDGES:
+            assert upstream in all_urns, f"Invalid upstream URN: {upstream}"
+            assert downstream in all_urns, f"Invalid downstream URN: {downstream}"
+
+    def test_chirps_to_alert_chain_connected(self):
+        from datahub.lineage import LINEAGE_EDGES
+        from datahub.entities import DATASETS, MODELS
+
+        # Verify the main chain exists: CHIRPS → M1 → BMA → Kelly → Alert
+        edges = set((u, d) for u, d, _ in LINEAGE_EDGES)
+        assert (DATASETS["chirps"], MODELS["M1"]) in edges
+        assert (MODELS["M1"], DATASETS["bma_scores"]) in edges
+        assert (DATASETS["bma_scores"], MODELS["M13"]) in edges
+        assert (MODELS["M13"], DATASETS["alerts"]) in edges
+        assert (DATASETS["alerts"], DATASETS["sms_feedback"]) in edges
+
+    def test_feedback_loop_present(self):
+        from datahub.lineage import LINEAGE_EDGES
+        from datahub.entities import DATASETS, MODELS
+
+        edges = set((u, d) for u, d, _ in LINEAGE_EDGES)
+        assert (DATASETS["sms_feedback"], MODELS["M14"]) in edges
+        assert (DATASETS["sms_feedback"], MODELS["M12"]) in edges
+
+    def test_trace_alert_lineage_has_8_steps(self):
+        from datahub.lineage import trace_alert_lineage
+
+        result = trace_alert_lineage("alert-123")
+        assert result["alert_id"] == "alert-123"
+        assert len(result["lineage_chain"]) == 8
+        assert result["lineage_chain"][7]["entity"] == "Alert alert-123"
+
+
+class TestQualityAssertions:
+    def test_all_5_assertions(self):
+        from datahub.assertions import QUALITY_ASSERTIONS
+
+        assert len(QUALITY_ASSERTIONS) == 5
+
+    def test_assertion_fields(self):
+        from datahub.assertions import QUALITY_ASSERTIONS
+
+        for assertion in QUALITY_ASSERTIONS:
+            assert assertion["name"]
+            assert assertion["description"]
+            assert assertion["entity"]
+            assert assertion["type"]
+
+
+class TestDataHubClient:
+    def test_dataset_urn_builder(self):
+        from datahub.client import HazardGraphDataHubClient
+
+        client = HazardGraphDataHubClient(gms_server="http://test", token="")
+        urn = client.dataset_urn("test_dataset", platform="neo4j")
+        assert "urn:li:dataset:" in urn
+        assert "test_dataset" in urn
+
+    def test_model_urn_builder(self):
+        from datahub.client import HazardGraphDataHubClient
+
+        client = HazardGraphDataHubClient(gms_server="http://test", token="")
+        urn = client.model_urn("test_model")
+        assert "urn:li:mlModel:" in urn
+        assert "test_model" in urn
+        assert "hazardgraph" in urn
+        assert "PROD" in urn
+
+    def test_health_check_false_when_unreachable(self):
+        from datahub.client import HazardGraphDataHubClient
+
+        # Localhost with no server should fail gracefully
+        client = HazardGraphDataHubClient(gms_server="http://localhost:9", token="")
+        assert client.health_check() is False
+
+
+class TestMCPSyncJob:
+    def test_sync_job_summary_shape(self):
+        """Verify sync summary counts without emitting (no server)."""
+        from datahub.sync_job import sync_all
+        from datahub.client import HazardGraphDataHubClient
+
+        class MockClient:
+            def __init__(self):
+                self.emitted = []
+
+            def emit(self, mcp):
+                self.emitted.append(mcp)
+
+            def dataset_urn(self, name, platform="neo4j"):
+                return f"urn:li:dataset:(urn:li:dataPlatform:{platform},{name},PROD)"
+
+            def model_urn(self, name):
+                return f"urn:li:mlModel:(urn:li:dataPlatform:hazardgraph,{name},PROD)"
+
+        client = MockClient()
+        summary = sync_all(client)
+        assert summary["status"] == "synced"
+        assert summary["datasets"] == 9
+        assert summary["models"] == 14
+        assert summary["lineage_edges"] == 31
+        assert summary["assertions"] == 5

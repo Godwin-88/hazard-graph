@@ -175,6 +175,8 @@ from api.routers.rl_policy import router as rl_policy_router
 from api.routers.scenarios import router as scenarios_router
 from api.routers.pipeline import router as pipeline_router
 from api.routers.assistant import router as assistant_router
+from api.routers.datahub import router as datahub_router
+from api.routers.agent import router as agent_router
 
 app.include_router(health_router)
 app.include_router(lineage_router)
@@ -192,6 +194,9 @@ app.include_router(scenarios_router)
 app.include_router(pipeline_router)
 # AI assistant (Groq) chat
 app.include_router(assistant_router)
+# DataHub metadata integration + LangGraph agent
+app.include_router(datahub_router)
+app.include_router(agent_router)
 
 
 # ── Root endpoint ──────────────────────────────────────────

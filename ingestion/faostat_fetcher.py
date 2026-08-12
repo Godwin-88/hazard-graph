@@ -14,6 +14,7 @@ from typing import Optional
 
 import httpx
 
+from config.settings import settings
 from db.neo4j_client import neo4j_client
 from db.redis_client import redis_client
 from graph.node_writers import (
@@ -75,8 +76,11 @@ async def _fetch_price_index(country_code: str, item_code: int, year: int) -> Op
     }
 
     async def _fetch():
+        headers = {}
+        if settings.faostat_api_key:
+            headers["Authorization"] = f"Bearer {settings.faostat_api_key}"
         async with httpx.AsyncClient(timeout=FAOSTAT_TIMEOUT, follow_redirects=True) as client:
-            response = await client.get(FAOSTAT_BASE_URL, params=params)
+            response = await client.get(FAOSTAT_BASE_URL, params=params, headers=headers)
             response.raise_for_status()
             return response.json()
 
@@ -117,8 +121,18 @@ async def fetch_all_countries() -> dict:
         "total_signals": 0,
         "success": 0,
         "failed": 0,
+        "skipped": 0,
         "source_id": SOURCE_ID,
     }
+
+    # FAOSTAT now requires an API key (Authorization header). Skip gracefully
+    # if not configured rather than hammering the API with 401 retries.
+    if not settings.faostat_api_key:
+        logger.warning(
+            "FAOSTAT API key not configured — set FAOSTAT_API_KEY in .env to enable. Skipping."
+        )
+        summary["skipped"] = 1
+        return summary
 
     try:
         await upsert_data_source(

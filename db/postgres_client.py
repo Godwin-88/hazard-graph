@@ -4,6 +4,7 @@ import logging
 from collections.abc import AsyncGenerator
 
 from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -55,11 +56,26 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def create_all_tables() -> None:
-    """Create all tables defined in models/postgres/."""
+    """Create all tables defined in models/postgres/.
+
+    SQLAlchemy's create_all(checkfirst=True) checks for table existence but
+    NOT for index existence. On an existing deployment (e.g. the remote
+    Supabase Postgres), the tables already exist, so create_all skips them
+    but still attempts to re-create their indexes, raising
+    DuplicateTableError and aborting startup. We catch that here and
+    continue so ensure_schema_migrations() can run idempotently.
+    """
     from models.postgres.base import Base  # noqa: F401 — ensures all models are imported
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("PostgreSQL tables created / verified")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("PostgreSQL tables created / verified")
+    except ProgrammingError as exc:
+        # Duplicate index/table on an existing deployment — safe to ignore.
+        logger.warning(
+            "create_all skipped existing objects (expected on existing DB): %s",
+            exc.orig if hasattr(exc, "orig") else exc,
+        )
 
 
 async def ensure_schema_migrations() -> None:
@@ -163,6 +179,71 @@ async def ensure_schema_migrations() -> None:
             )
         )
         logger.info("Ensured alerts.status is VARCHAR(20)")
+
+        # model_performance — Brier scores, BMA weights, training timestamps.
+        # create_all() may skip this on existing deployments (see note in
+        # create_all_tables), so create it idempotently here.
+        await conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS model_performance ("
+                "  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),"
+                "  model_name VARCHAR(100) NOT NULL,"
+                "  model_id VARCHAR(20),"
+                "  brier_score FLOAT,"
+                "  bma_weight FLOAT,"
+                "  trained_at TIMESTAMPTZ,"
+                "  last_inference_at TIMESTAMPTZ,"
+                "  status VARCHAR(20) NOT NULL DEFAULT 'active',"
+                "  notes TEXT,"
+                "  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+                "  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+                ")"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_model_performance_model_name "
+                "ON model_performance(model_name)"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_model_performance_model_id "
+                "ON model_performance(model_id)"
+            )
+        )
+        logger.info("Ensured model_performance table + indexes")
+
+        # job_error_logs — structured error logging for failed model runs.
+        # create_all() creates this for fresh deployments; add it idempotently
+        # for existing deployments so the UI can render detailed error views.
+        await conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS job_error_logs ("
+                "  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),"
+                "  run_id UUID NOT NULL REFERENCES job_runs(id) ON DELETE CASCADE,"
+                "  job_name VARCHAR(255) NOT NULL,"
+                "  error_type VARCHAR(100) NOT NULL,"
+                "  error_message TEXT NOT NULL,"
+                "  traceback TEXT,"
+                "  node_name VARCHAR(255),"
+                "  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+                ")"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_job_error_logs_run_id "
+                "ON job_error_logs(run_id)"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_job_error_logs_job_name "
+                "ON job_error_logs(job_name)"
+            )
+        )
+        logger.info("Ensured job_error_logs table + indexes")
 
 
 async def close_postgres() -> None:
