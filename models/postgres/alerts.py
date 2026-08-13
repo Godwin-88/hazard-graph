@@ -38,6 +38,7 @@ class Alert(Base):
     region_id = Column(String(100), nullable=False, index=True)
     language = Column(String(10), nullable=False, default="en")
     message_text = Column(Text, nullable=False)
+    english_text = Column(Text, nullable=True)
     risk_score_at_trigger = Column(Float, nullable=False, default=0.0)
     generated_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     status = Column(String(20), nullable=False, default=AlertStatus.PENDING.value)

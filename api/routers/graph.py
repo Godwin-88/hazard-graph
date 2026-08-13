@@ -194,7 +194,7 @@ async def get_all_nodes():
     query = """
     MATCH (n) WHERE n.active IS NULL OR n.active <> false
     OPTIONAL MATCH (n)-[r]->(m)
-    RETURN n, r, m LIMIT 2000
+    RETURN n, r, m LIMIT 20000
     """
     try:
         results = await neo4j_client.execute_read(query)
@@ -251,7 +251,7 @@ async def get_all_edges():
     query = """
     MATCH (n) WHERE n.active IS NULL OR n.active <> false
     OPTIONAL MATCH (n)-[r]->(m)
-    RETURN n, r, m LIMIT 2000
+    RETURN n, r, m LIMIT 20000
     """
     try:
         results = await neo4j_client.execute_read(query)
@@ -504,6 +504,9 @@ async def get_causal_chain(region_id: str, hazard_type: str):
             if node_data:
                 chain_nodes.append(node_data)
 
+        # Some CAUSES relationships may lack a weight property, yielding
+        # None entries — filter them out before summing/formatting.
+        weights = [w for w in weights if w is not None]
         cumulative_weight = sum(abs(w) for w in weights) if weights else 0.0
 
         chains.append({

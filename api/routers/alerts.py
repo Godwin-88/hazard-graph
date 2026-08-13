@@ -42,6 +42,7 @@ class AlertOut(BaseModel):
     country: str = ""
     language: str
     message_text: str
+    english_text: Optional[str] = None
     risk_score_at_trigger: float
     kelly_priority: float
     confidence: float = 0.0
@@ -126,8 +127,8 @@ async def list_alerts(
 
     query = text(
         f"""SELECT a.id, a.region_id, a.language, a.message_text,
-                   a.risk_score_at_trigger, a.kelly_priority, a.status,
-                   a.generated_at, a.approved_at, a.dispatched_at,
+                   a.english_text, a.risk_score_at_trigger, a.kelly_priority,
+                   a.status, a.generated_at, a.approved_at, a.dispatched_at,
                    a.sent_count, a.delivered_count
             FROM alerts a
             WHERE {where_clause}
@@ -149,14 +150,15 @@ async def list_alerts(
             region_id=row[1],
             language=row[2],
             message_text=row[3],
-            risk_score_at_trigger=row[4],
-            kelly_priority=row[5],
-            status=row[6],
-            generated_at=str(row[7]) if row[7] else "",
-            approved_at=str(row[8]) if row[8] else None,
-            dispatched_at=str(row[9]) if row[9] else None,
-            sent_count=row[10] or 0,
-            delivered_count=row[11] or 0,
+            english_text=row[4],
+            risk_score_at_trigger=row[5],
+            kelly_priority=row[6],
+            status=row[7],
+            generated_at=str(row[8]) if row[8] else "",
+            approved_at=str(row[9]) if row[9] else None,
+            dispatched_at=str(row[10]) if row[10] else None,
+            sent_count=row[11] or 0,
+            delivered_count=row[12] or 0,
         ))
     return alerts
 
@@ -412,10 +414,11 @@ async def get_alert(
         result = await db.execute(
             text(
                 """SELECT a.id, a.region_id, a.language, a.message_text,
-                          a.risk_score_at_trigger, a.kelly_priority, a.status,
-                          a.generated_at, a.approved_at, a.dispatched_at,
+                          a.english_text, a.risk_score_at_trigger,
+                          a.kelly_priority, a.status, a.generated_at,
+                          a.approved_at, a.dispatched_at,
                           a.sent_count, a.delivered_count
-                   FROM alerts a WHERE a.id = :aid::uuid"""
+                   FROM alerts a WHERE a.id = CAST(:aid AS uuid)"""
             ),
             {"aid": alert_id},
         )
@@ -432,14 +435,15 @@ async def get_alert(
         region_id=row[1],
         language=row[2],
         message_text=row[3],
-        risk_score_at_trigger=row[4],
-        kelly_priority=row[5],
-        status=row[6],
-        generated_at=str(row[7]) if row[7] else "",
-        approved_at=str(row[8]) if row[8] else None,
-        dispatched_at=str(row[9]) if row[9] else None,
-        sent_count=row[10] or 0,
-        delivered_count=row[11] or 0,
+        english_text=row[4],
+        risk_score_at_trigger=row[5],
+        kelly_priority=row[6],
+        status=row[7],
+        generated_at=str(row[8]) if row[8] else "",
+        approved_at=str(row[9]) if row[9] else None,
+        dispatched_at=str(row[10]) if row[10] else None,
+        sent_count=row[11] or 0,
+        delivered_count=row[12] or 0,
     )
 
 
@@ -463,7 +467,7 @@ async def patch_alert(
                        message_text = COALESCE(:msg, message_text),
                        approved_by = :uid,
                        approved_at = :now
-                       WHERE id = :aid::uuid"""
+                       WHERE id = CAST(:aid AS uuid)"""
                 ),
                 {
                     "msg": msg_text,
@@ -488,7 +492,7 @@ async def patch_alert(
                        rejection_reason = :reason,
                        approved_by = :uid,
                        approved_at = :now
-                       WHERE id = :aid::uuid"""
+                       WHERE id = CAST(:aid AS uuid)"""
                 ),
                 {
                     "reason": body.reason or "No reason provided",
@@ -534,7 +538,7 @@ async def dispatch_alert(
     # Fetch alert
     try:
         result = await db.execute(
-            text("SELECT status, message_text, region_id FROM alerts WHERE id = :aid::uuid"),
+            text("SELECT status, message_text, region_id FROM alerts WHERE id = CAST(:aid AS uuid)"),
             {"aid": alert_id},
         )
         row = result.fetchone()
@@ -585,7 +589,7 @@ async def get_alert_responses(
             text(
                 """SELECT id, response_type, response_text, responded_at
                    FROM alert_responses
-                   WHERE alert_id = :aid::uuid
+                   WHERE alert_id = CAST(:aid AS uuid)
                    ORDER BY responded_at DESC"""
             ),
             {"aid": alert_id},

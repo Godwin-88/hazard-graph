@@ -337,18 +337,66 @@ async def seed_neo4j(neo4j_session):
 
 
 async def seed_postgres(postgres_session):
-    """Seed demo alerts into PostgreSQL."""
-    from models.postgres.alerts import Alert
-    from sqlalchemy import select
+    """Seed demo alerts into PostgreSQL.
 
-    # Check if alerts already exist
+    Idempotent: always resets the demo regions' alerts to 'pending' so the
+    Alert Review page reliably shows pending alerts for the approve/queue,
+    dispatch, and reject demo. Any previously approved/dispatched/rejected
+    alerts for these regions are reset to pending on every run.
+    """
+    from models.postgres.alerts import Alert
+    from sqlalchemy import select, text
+
+    demo_region_ids = [
+        'region_somalia', 'region_south_sudan', 'region_ethiopia',
+        'region_kenya', 'region_sudan',
+    ]
+
+    # Ensure the english_text column exists (idempotent for existing DBs).
+    try:
+        await postgres_session.execute(
+            text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS english_text TEXT")
+        )
+        await postgres_session.commit()
+    except Exception as exc:
+        print(f"  Warning: failed to add english_text column: {exc}")
+        await postgres_session.rollback()
+
+    # Reset any existing alerts for the demo regions back to pending so the
+    # pending tab always has content for the 3-button demo. This also clears
+    # stale sent/approved/rejected states from prior testing.
+    try:
+        await postgres_session.execute(
+            text(
+                """UPDATE alerts SET
+                     status = 'pending',
+                     approved_at = NULL,
+                     approved_by = NULL,
+                     dispatched_at = NULL,
+                     sent_count = 0,
+                     delivered_count = 0,
+                     rejection_reason = NULL,
+                     updated_at = NOW()
+                   WHERE region_id = ANY(:rids)"""
+            ),
+            {"rids": demo_region_ids},
+        )
+        await postgres_session.commit()
+        print("  Reset existing demo alerts to pending.")
+    except Exception as exc:
+        print(f"  Warning: failed to reset demo alerts: {exc}")
+        await postgres_session.rollback()
+
+    # Check if any pending alerts already exist for the demo regions; if so,
+    # we're done (the reset above guarantees they're pending).
     existing = await postgres_session.execute(
-        select(Alert).where(Alert.region_id.in_(
-            ['region_somalia', 'region_south_sudan', 'region_ethiopia']
-        ))
+        select(Alert).where(
+            Alert.region_id.in_(demo_region_ids),
+            Alert.status == 'pending',
+        )
     )
     if existing.scalars().first():
-        print("  Alerts already exist, skipping.")
+        print("  Pending demo alerts already present, skipping insert.")
         return
 
     demo_alerts = [
@@ -356,8 +404,13 @@ async def seed_postgres(postgres_session):
             'region_id': 'region_somalia',
             'language': 'somali',
             'message_text': (
-                'Vuna chakula kilichobaki wiki hii. Mvua haitarajiwi '
-                'kwa miezi 2 ijayo. Tafuta msaada wa chakula kituo cha karibu.'
+                'Vuna dalagga hadda ka hor inta uusan dhammaan. '
+                'Roobku ma soo da\'i doono labada bilood ee soo socda. '
+                'Raadso gargaar cunto xarunta ugu dhow.'
+            ),
+            'english_text': (
+                'Harvest remaining crops this week. Rain not expected '
+                'for the next 2 months. Seek food aid at the nearest centre.'
             ),
             'risk_score': 89.4,
             'kelly_priority': 0.85,
@@ -371,6 +424,11 @@ async def seed_postgres(postgres_session):
                 'this week. Severe drought expected to worsen. '
                 'Humanitarian aid available at distribution centres.'
             ),
+            'english_text': (
+                'Move livestock to northern water points before end of '
+                'this week. Severe drought expected to worsen. '
+                'Humanitarian aid available at distribution centres.'
+            ),
             'risk_score': 91.7,
             'kelly_priority': 0.78,
             'status': 'pending',
@@ -379,9 +437,12 @@ async def seed_postgres(postgres_session):
             'region_id': 'region_ethiopia',
             'language': 'amharic',
             'message_text': (
-                'Sehemu ya kaskazini: hifadhi mbegu kwa msimu ujao. '
-                'Hali mbaya ya ukame inatarajiwa. Pata maji kutoka '
-                'vituo vya usambazaji.'
+                'በሰሜን ክፍል ለሚቀጥለው ወቅት ዘር ያከማቹ። '
+                'ከባድ ድርቅ ይጠበቃል። ከማከፋፈያ ማዕከላት ውሃ ያግኙ።'
+            ),
+            'english_text': (
+                'Northern region: store seeds for the next season. '
+                'Severe drought expected. Get water from distribution centres.'
             ),
             'risk_score': 82.1,
             'kelly_priority': 0.72,
@@ -394,6 +455,10 @@ async def seed_postgres(postgres_session):
                 'Punguza matumizi ya maji wiki hii. Msimu wa mvua '
                 'umekawia. Tafuta huduma za mifugo katika eneo lako.'
             ),
+            'english_text': (
+                'Reduce water use this week. The rainy season is delayed. '
+                'Seek livestock services in your area.'
+            ),
             'risk_score': 67.3,
             'kelly_priority': 0.55,
             'status': 'pending',
@@ -402,8 +467,12 @@ async def seed_postgres(postgres_session):
             'region_id': 'region_sudan',
             'language': 'arabic',
             'message_text': (
-                'Early warning: monitor river levels. Flood risk '
-                'elevated after recent rains. Move to higher ground if needed.'
+                'راقب مستويات النهر هذا الأسبوع. خطر الفيضانات '
+                'مرتفع بعد الأمطار الأخيرة. انتقل إلى أرض مرتفعة إذا لزم الأمر.'
+            ),
+            'english_text': (
+                'Monitor river levels this week. Flood risk elevated '
+                'after recent rains. Move to higher ground if needed.'
             ),
             'risk_score': 71.2,
             'kelly_priority': 0.60,
@@ -416,6 +485,7 @@ async def seed_postgres(postgres_session):
             region_id=a['region_id'],
             language=a['language'],
             message_text=a['message_text'],
+            english_text=a.get('english_text'),
             risk_score_at_trigger=a['risk_score'],
             kelly_priority=a['kelly_priority'],
             status=a['status'],

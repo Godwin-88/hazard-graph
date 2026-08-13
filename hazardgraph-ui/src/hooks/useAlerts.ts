@@ -28,6 +28,12 @@ async function dispatchAlert(id: string) {
   });
 }
 
+async function generateAlerts() {
+  return fetchJson(`${API_BASE}/alerts/generate`, {
+    method: 'POST',
+  });
+}
+
 export function useAlerts(status?: string) {
   return useQuery({
     queryKey: ['alerts', status],
@@ -68,6 +74,16 @@ export function useDispatchAlert() {
   });
 }
 
+export function useGenerateAlerts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => generateAlerts(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['alerts'] });
+    },
+  });
+}
+
 export interface Alert {
   id: string;
   region_id: string;
@@ -75,6 +91,7 @@ export interface Alert {
   country?: string;
   language: string;
   message_text: string;
+  english_text?: string;
   risk_score_at_trigger: number;
   kelly_priority: number;
   confidence?: number;

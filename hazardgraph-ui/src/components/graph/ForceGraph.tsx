@@ -4,6 +4,7 @@ interface GraphNode {
   id: string;
   label: string;
   type: string;
+  properties?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -13,6 +14,21 @@ interface GraphEdge {
   type: string;
   weight?: number;
   [key: string]: unknown;
+}
+
+interface DisplayNode {
+  id: string;
+  label: string;
+  type: string;
+  isAggregate: boolean;
+  count: number;
+}
+
+interface DisplayEdge {
+  source: string;
+  target: string;
+  type: string;
+  weight: number;
 }
 
 interface ForceGraphProps {
@@ -63,19 +79,33 @@ const NODE_SIZES: Record<string, number> = {
   ConflictSignal: 8,
 };
 
+// Build a distinguishing label for an individual node so members of the same
+// type (e.g. hundreds of IPCPhaseSignal nodes) are not all labelled identically.
+function nodeDisplayLabel(n: GraphNode): string {
+  const p = (n.properties || {}) as Record<string, unknown>;
+  if (n.type === 'Region') return String(p.name || n.label || n.id);
+  if (p.region_id && p.date) {
+    return `${String(p.region_id).replace('region_', '')} · ${String(p.date)}`;
+  }
+  if (p.region_id) return String(p.region_id).replace('region_', '');
+  if (p.name) return String(p.name);
+  if (p.title) return String(p.title);
+  if (p.commodity) return `${String(p.commodity)} · ${String(p.region_id || '').replace('region_', '')}`;
+  return String(n.label || n.id);
+}
+
 export function ForceGraph({ nodes, edges, onNodeClick }: ForceGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<any>(null);
-  const [activeTypes, setActiveTypes] = useState<Set<string>>(
-    () => new Set([
-      'Region', 'HazardRegime', 'RainfallSignal', 'FoodPriceSignal', 'IPCPhaseSignal',
-      'CausalEdge', 'HazardType', 'StochasticSignal', 'BMAScore', 'NDVISignal', 'ForecastSignal',
-      'InterventionStrategy', 'Alert', 'ConflictSignal',
-    ])
-  );
+  // Default to the type-overview so the graph is readable instead of dumping
+  // thousands of indistinguishable nodes at once.
+  const [viewMode, setViewMode] = useState<'types' | 'nodes'>('types');
+  const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set());
+  const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set());
   const [minWeight, setMinWeight] = useState(0);
   const [graphLibLoaded, setGraphLibLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [typesInitialized, setTypesInitialized] = useState(false);
 
   // Dynamically load the force graph library
   useEffect(() => {
@@ -91,50 +121,171 @@ export function ForceGraph({ nodes, edges, onNodeClick }: ForceGraphProps) {
     return () => { cancelled = true; };
   }, []);
 
-  // Filtered data
-  const visibleNodes = useMemo(() => {
-    // Only show nodes whose type is enabled in the filter
-    return nodes.filter((n) => activeTypes.has(n.type));
-  }, [nodes, activeTypes]);
-
-  const visibleEdges = useMemo(() => {
-    // Filter edges by weight threshold AND only keep edges connecting visible nodes
-    const visibleIds = new Set(visibleNodes.map((n) => String(n.id)));
-    return edges
-      .filter((e) => (e.weight ?? 1) >= minWeight)
-      .filter((e) => visibleIds.has(String(e.source)) && visibleIds.has(String(e.target)));
-  }, [edges, minWeight, visibleNodes]);
-
-  const graphData = useMemo(() => ({
-    nodes: visibleNodes.map((n) => ({
-      id: String(n.id),
-      label: String(n.label || n.id),
-      type: n.type,
-      val: NODE_SIZES[n.type] || 7,
-    })),
-    links: visibleEdges.map((e) => ({
-      source: String(e.source),
-      target: String(e.target),
-      type: e.type,
-      weight: e.weight ?? 1,
-      value: (e.weight ?? 1) * 2,
-    })),
-  }), [visibleNodes, visibleEdges]);
-
-  const handleNodeClick = useCallback(
-    (node: { id: string }) => {
-      const found = nodes.find((n) => String(n.id) === String(node.id));
-      if (found && onNodeClick) onNodeClick(found);
-    },
-    [nodes, onNodeClick]
-  );
-
   const nodeTypes = useMemo(() => {
-    // Collect unique node types from actual data, merged with known colors
     const dataTypes = new Set<string>();
     nodes.forEach((n) => dataTypes.add(n.type));
     return Array.from(dataTypes);
   }, [nodes]);
+
+  // Enable ALL types by default so edges are not dropped by the visibility filter.
+  useEffect(() => {
+    if (typesInitialized || nodeTypes.length === 0) return;
+    setActiveTypes(new Set(nodeTypes));
+    setTypesInitialized(true);
+  }, [nodeTypes, typesInitialized]);
+
+  // ── Type aggregates ──────────────────────────────────────
+  // Group nodes by type; each type becomes one aggregate node (unless expanded).
+  const nodesByType = useMemo(() => {
+    const map = new Map<string, GraphNode[]>();
+    nodes.forEach((n) => {
+      if (!map.has(n.type)) map.set(n.type, []);
+      map.get(n.type)!.push(n);
+    });
+    return map;
+  }, [nodes]);
+
+  // ── Display nodes ────────────────────────────────────────
+  const displayNodes = useMemo<DisplayNode[]>(() => {
+    if (viewMode === 'nodes') {
+      // All-nodes mode: show every node (of an enabled type) with a
+      // distinguishing label.
+      return nodes
+        .filter((n) => activeTypes.has(n.type))
+        .map((n) => ({
+          id: String(n.id),
+          label: nodeDisplayLabel(n),
+          type: n.type,
+          isAggregate: false,
+          count: 1,
+        }));
+    }
+    // Type-overview mode: one aggregate node per enabled type, unless that
+    // type is expanded (then show its member nodes with distinguishing labels).
+    const result: DisplayNode[] = [];
+    nodesByType.forEach((members, type) => {
+      if (!activeTypes.has(type)) return;
+      if (expandedTypes.has(type)) {
+        members.slice(0, 300).forEach((m) => {
+          result.push({
+            id: String(m.id),
+            label: nodeDisplayLabel(m),
+            type,
+            isAggregate: false,
+            count: 1,
+          });
+        });
+      } else {
+        result.push({
+          id: `type:${type}`,
+          label: `${type} (${members.length})`,
+          type,
+          isAggregate: true,
+          count: members.length,
+        });
+      }
+    });
+    return result;
+  }, [viewMode, nodes, nodesByType, expandedTypes, activeTypes]);
+
+  // ── Display edges ────────────────────────────────────────
+  const displayEdges = useMemo<DisplayEdge[]>(() => {
+    const result: DisplayEdge[] = [];
+    const visibleIds = new Set(displayNodes.map((n) => n.id));
+
+    edges.forEach((e) => {
+      const src = nodes.find((n) => String(n.id) === String(e.source));
+      const tgt = nodes.find((n) => String(n.id) === String(e.target));
+      if (!src || !tgt) return;
+
+      if (viewMode === 'nodes') {
+        if (visibleIds.has(String(e.source)) && visibleIds.has(String(e.target))) {
+          result.push({
+            source: String(e.source),
+            target: String(e.target),
+            type: e.type,
+            weight: e.weight ?? 1,
+          });
+        }
+        return;
+      }
+
+      // Type-overview: map each endpoint to either its member id (if that type
+      // is expanded) or its aggregate type id (if collapsed).
+      const srcVisible = expandedTypes.has(src.type)
+        ? visibleIds.has(String(e.source))
+        : visibleIds.has(`type:${src.type}`);
+      const tgtVisible = expandedTypes.has(tgt.type)
+        ? visibleIds.has(String(e.target))
+        : visibleIds.has(`type:${tgt.type}`);
+      if (srcVisible && tgtVisible) {
+        result.push({
+          source: expandedTypes.has(src.type) ? String(e.source) : `type:${src.type}`,
+          target: expandedTypes.has(tgt.type) ? String(e.target) : `type:${tgt.type}`,
+          type: e.type,
+          weight: e.weight ?? 1,
+        });
+      }
+    });
+    return result;
+  }, [viewMode, edges, nodes, displayNodes, expandedTypes]);
+
+  // Aggregate edge counts for the relationship legend (type-overview).
+  const aggregateEdgeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    displayEdges.forEach((e) => {
+      counts.set(e.type, (counts.get(e.type) || 0) + 1);
+    });
+    return counts;
+  }, [displayEdges]);
+
+  const graphData = useMemo(() => ({
+    nodes: displayNodes.map((n) => ({
+      id: n.id,
+      label: n.label,
+      type: n.type,
+      isAggregate: n.isAggregate,
+      count: n.count,
+      val: n.isAggregate
+        ? Math.min(18 + n.count / 40, 38)
+        : (NODE_SIZES[n.type] || 7),
+    })),
+    links: displayEdges.map((e) => ({
+      source: e.source,
+      target: e.target,
+      type: e.type,
+      weight: e.weight,
+      value: (e.weight ?? 1) * 2,
+    })),
+  }), [displayNodes, displayEdges]);
+
+  const handleNodeClick = useCallback(
+    (node: { id: string }) => {
+      // In type-overview mode, clicking an aggregate node expands/collapses it.
+      if (viewMode === 'types') {
+        const agg = displayNodes.find((n) => n.id === node.id && n.isAggregate);
+        if (agg) {
+          setExpandedTypes((prev) => {
+            const next = new Set(prev);
+            if (next.has(agg.type)) next.delete(agg.type);
+            else next.add(agg.type);
+            return next;
+          });
+          return;
+        }
+      }
+      // Otherwise open the detail sheet for the underlying node.
+      const found = nodes.find((n) => String(n.id) === String(node.id));
+      if (found && onNodeClick) onNodeClick(found);
+    },
+    [viewMode, displayNodes, nodes, onNodeClick]
+  );
+
+  const edgeTypes = useMemo(() => {
+    const types = new Set<string>();
+    edges.forEach((e) => types.add(e.type));
+    return Array.from(types);
+  }, [edges]);
 
   const allTypesEnabled = activeTypes.size === nodeTypes.length && nodeTypes.length > 0;
 
@@ -142,13 +293,6 @@ export function ForceGraph({ nodes, edges, onNodeClick }: ForceGraphProps) {
     if (allTypesEnabled) setActiveTypes(new Set());
     else setActiveTypes(new Set(nodeTypes));
   };
-
-  // Build the actual ForceGraph2D component lazily
-  const ForceGraph2DComponent = useMemo(() => {
-    if (!graphLibLoaded) return null;
-    // This is a placeholder - we'll dynamically load it in the render
-    return null;
-  }, [graphLibLoaded]);
 
   if (error) {
     return (
@@ -174,7 +318,33 @@ export function ForceGraph({ nodes, edges, onNodeClick }: ForceGraphProps) {
       </div>
 
       {/* Controls overlay */}
-      <div className="absolute top-4 right-4 w-56 space-y-3 rounded-lg border border-gray-800 bg-[#111827]/95 p-3 shadow-xl backdrop-blur-sm z-10">
+      <div className="absolute top-4 right-4 w-60 space-y-3 rounded-lg border border-gray-800 bg-[#111827]/95 p-3 shadow-xl backdrop-blur-sm z-10">
+        {/* View mode toggle */}
+        <div className="flex rounded-lg border border-gray-700 bg-gray-800 p-0.5">
+          <button
+            onClick={() => setViewMode('types')}
+            className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+              viewMode === 'types' ? 'bg-[#0F4C81] text-white' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            By Type
+          </button>
+          <button
+            onClick={() => setViewMode('nodes')}
+            className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+              viewMode === 'nodes' ? 'bg-[#0F4C81] text-white' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            All Nodes
+          </button>
+        </div>
+
+        {viewMode === 'types' && (
+          <p className="text-[10px] text-gray-500">
+            Click a type node to expand its members. Click again to collapse.
+          </p>
+        )}
+
         {/* Type filter */}
         <div>
           <div className="mb-1 flex items-center justify-between">
@@ -186,7 +356,7 @@ export function ForceGraph({ nodes, edges, onNodeClick }: ForceGraphProps) {
               {allTypesEnabled ? 'None' : 'All'}
             </button>
           </div>
-          <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
+          <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
             {nodeTypes.length === 0 && (
               <p className="text-xs text-gray-500">No node types available</p>
             )}
@@ -230,34 +400,36 @@ export function ForceGraph({ nodes, edges, onNodeClick }: ForceGraphProps) {
           />
         </div>
 
-        {/* Directions */}
+        {/* Relationship types legend */}
         <div>
-          <p className="text-xs font-medium text-gray-400 mb-1">Legend</p>
-          <div className="flex flex-wrap gap-1.5">
-            {activeTypes.size > 0 && Array.from(activeTypes).slice(0, 8).map((type) => (
-              <span
-                key={type}
-                className="px-1.5 py-0.5 rounded text-[10px] font-medium"
-                style={{
-                  backgroundColor: `${NODE_COLORS[type] || '#6B7280'}22`,
-                  color: NODE_COLORS[type] || '#9CA3AF',
-                  border: `1px solid ${NODE_COLORS[type] || '#6B7280'}55`,
-                }}
-              >
-                {type}
-              </span>
-            ))}
-            {activeTypes.size > 8 && (
-              <span className="px-1.5 py-0.5 rounded text-[10px] text-gray-400 bg-gray-800">
-                +{activeTypes.size - 8} more
-              </span>
-            )}
-          </div>
+          <p className="text-xs font-medium text-gray-400 mb-1">Relationships</p>
+          {edgeTypes.length === 0 ? (
+            <p className="text-[10px] text-gray-500">No relationships found</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {edgeTypes.slice(0, 10).map((type) => (
+                <span
+                  key={type}
+                  className="px-1.5 py-0.5 rounded text-[10px] font-medium text-purple-300 bg-purple-500/10 border border-purple-500/30"
+                >
+                  {type}
+                  {viewMode === 'types' && aggregateEdgeCounts.has(type)
+                    ? ` (${aggregateEdgeCounts.get(type)})`
+                    : ''}
+                </span>
+              ))}
+              {edgeTypes.length > 10 && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] text-gray-400 bg-gray-800">
+                  +{edgeTypes.length - 10} more
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Stats */}
         <div className="border-t border-gray-800 pt-2 text-xs text-gray-500">
-          {visibleNodes.length} nodes · {visibleEdges.length} edges
+          {displayNodes.length} nodes · {displayEdges.length} edges
           {!graphLibLoaded && ' · using fallback layout'}
         </div>
       </div>
@@ -277,7 +449,7 @@ function GraphVisualization({
 }: {
   containerRef: React.RefObject<HTMLDivElement>;
   graphData: {
-    nodes: { id: string; label: string; type: string; val: number }[];
+    nodes: { id: string; label: string; type: string; isAggregate: boolean; count: number; val: number }[];
     links: { source: string; target: string; type: string; weight: number; value: number }[];
   };
   graphLibLoaded: boolean;
@@ -365,6 +537,15 @@ function GraphVisualization({
         ctx.fillStyle = color;
         ctx.fill();
 
+        // Aggregate ring
+        if (node.isAggregate) {
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, size + 4, 0, 2 * Math.PI);
+          ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+
         // Node border
         ctx.strokeStyle = 'rgba(255,255,255,0.2)';
         ctx.lineWidth = 1;
@@ -372,7 +553,7 @@ function GraphVisualization({
 
         // Label
         ctx.fillStyle = '#E5E7EB';
-        ctx.font = '10px Inter, sans-serif';
+        ctx.font = node.isAggregate ? 'bold 11px Inter, sans-serif' : '10px Inter, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(node.label, node.x, node.y + size + 14);
       });
@@ -448,14 +629,15 @@ function GraphVisualization({
 
 // Helper functions for force graph rendering
 function nodeVal(node: any): number {
+  if (node.isAggregate) return Math.min(18 + node.count / 40, 38);
   return NODE_SIZES[node.type] || 7;
 }
 
 function nodeCanvasObject(node: any, ctx: CanvasRenderingContext2D, globalScale: number) {
   const label = node.label || node.id;
-  const fontSize = 9 / globalScale;
+  const fontSize = (node.isAggregate ? 11 : 9) / globalScale;
   const color = NODE_COLORS[node.type] || '#6B7280';
-  const size = (NODE_SIZES[node.type] || 7) / globalScale;
+  const size = (node.isAggregate ? Math.min(18 + node.count / 40, 38) : (NODE_SIZES[node.type] || 7)) / globalScale;
 
   // Glow
   ctx.beginPath();
@@ -468,6 +650,15 @@ function nodeCanvasObject(node: any, ctx: CanvasRenderingContext2D, globalScale:
   ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
   ctx.fillStyle = color;
   ctx.fill();
+
+  // Aggregate ring
+  if (node.isAggregate) {
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, size + 4, 0, 2 * Math.PI);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 2 / globalScale;
+    ctx.stroke();
+  }
 
   // Border
   ctx.strokeStyle = 'rgba(255,255,255,0.2)';

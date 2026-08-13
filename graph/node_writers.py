@@ -482,6 +482,121 @@ async def reconcile_graph_relationships() -> dict:
     result = await neo4j_client.execute_write(q)
     summary["predicts_bma"] = result[0]["cnt"] if result else 0
 
+    # 6. INCREASES_RISK_OF — link signals to the hazard types they drive so
+    # the Graph Explorer shows signal → hazard connections (not just
+    # signal → region). Low SPI drives drought; high SPI drives flood;
+    # rising food prices drive market shock; conflict events drive conflict.
+    q = """
+    MATCH (rs:RainfallSignal)
+    WHERE rs.region_id IS NOT NULL AND rs.spi_30d < 0
+    MATCH (h:HazardType {id: 'hazard_drought'})
+    MERGE (rs)-[:INCREASES_RISK_OF]->(h)
+    WITH count(h) AS cnt
+    RETURN cnt
+    """
+    result = await neo4j_client.execute_write(q)
+    summary["increases_risk_drought"] = result[0]["cnt"] if result else 0
+
+    q = """
+    MATCH (rs:RainfallSignal)
+    WHERE rs.region_id IS NOT NULL AND rs.spi_30d > 1
+    MATCH (h:HazardType {id: 'hazard_flood'})
+    MERGE (rs)-[:INCREASES_RISK_OF]->(h)
+    WITH count(h) AS cnt
+    RETURN cnt
+    """
+    result = await neo4j_client.execute_write(q)
+    summary["increases_risk_flood"] = result[0]["cnt"] if result else 0
+
+    q = """
+    MATCH (fps:FoodPriceSignal)
+    WHERE fps.region_id IS NOT NULL AND fps.pct_change_30d > 5
+    MATCH (h:HazardType {id: 'hazard_market_shock'})
+    MERGE (fps)-[:INCREASES_RISK_OF]->(h)
+    WITH count(h) AS cnt
+    RETURN cnt
+    """
+    result = await neo4j_client.execute_write(q)
+    summary["increases_risk_market"] = result[0]["cnt"] if result else 0
+
+    q = """
+    MATCH (cs:ConflictSignal)
+    WHERE cs.region_id IS NOT NULL AND cs.events_count > 0
+    MATCH (h:HazardType {id: 'hazard_conflict'})
+    MERGE (cs)-[:INCREASES_RISK_OF]->(h)
+    WITH count(h) AS cnt
+    RETURN cnt
+    """
+    result = await neo4j_client.execute_write(q)
+    summary["increases_risk_conflict"] = result[0]["cnt"] if result else 0
+
+    # 7. TRIGGERED — link Alert nodes to their Region so alerts appear
+    # connected in the graph rather than as isolated nodes.
+    q = """
+    MATCH (a:Alert)
+    WHERE a.region_id IS NOT NULL
+    MATCH (r:Region {id: a.region_id})
+    MERGE (a)-[:TRIGGERED]->(r)
+    WITH count(r) AS cnt
+    RETURN cnt
+    """
+    result = await neo4j_client.execute_write(q)
+    summary["triggered"] = result[0]["cnt"] if result else 0
+
+    # 8. BELONGS_TO_CLUSTER — link elevated-risk Regions to HazardClusters
+    # when cluster nodes exist (created by the Louvain job).
+    q = """
+    MATCH (c:HazardCluster)
+    MATCH (r:Region)
+    WHERE r.current_risk_score >= 40
+    MERGE (r)-[:BELONGS_TO_CLUSTER]->(c)
+    WITH count(c) AS cnt
+    RETURN cnt
+    """
+    result = await neo4j_client.execute_write(q)
+    summary["belongs_to_cluster"] = result[0]["cnt"] if result else 0
+
+    # 9. SOURCED_FROM — link signal nodes to a DataSource when one exists,
+    # so the provenance chain (signal → source) is visible in the graph.
+    q = """
+    MATCH (ds:DataSource)
+    WITH ds LIMIT 1
+    MATCH (n)
+    WHERE (n:RainfallSignal OR n:FoodPriceSignal OR n:IPCPhaseSignal
+           OR n:NDVISignal OR n:ConflictSignal OR n:StochasticSignal)
+      AND n.region_id IS NOT NULL
+    MERGE (n)-[:SOURCED_FROM]->(ds)
+    WITH count(ds) AS cnt
+    RETURN cnt
+    """
+    result = await neo4j_client.execute_write(q)
+    summary["sourced_from"] = result[0]["cnt"] if result else 0
+
+    # 10. SYSTEMICALLY_CRITICAL — link high-risk Regions to the intervention
+    # strategy that mitigates their dominant hazard, so strategy nodes are
+    # connected to the regions they serve.
+    q = """
+    MATCH (r:Region)
+    WHERE r.current_regime CONTAINS 'Drought' AND r.current_risk_score >= 40
+    MATCH (s:InterventionStrategy {id: 'strategy_water_trucking'})
+    MERGE (r)-[:SYSTEMICALLY_CRITICAL]->(s)
+    WITH count(s) AS cnt
+    RETURN cnt
+    """
+    result = await neo4j_client.execute_write(q)
+    summary["systemically_critical_drought"] = result[0]["cnt"] if result else 0
+
+    q = """
+    MATCH (r:Region)
+    WHERE r.current_regime CONTAINS 'Flood' AND r.current_risk_score >= 40
+    MATCH (s:InterventionStrategy {id: 'strategy_sandbagging'})
+    MERGE (r)-[:SYSTEMICALLY_CRITICAL]->(s)
+    WITH count(s) AS cnt
+    RETURN cnt
+    """
+    result = await neo4j_client.execute_write(q)
+    summary["systemically_critical_flood"] = result[0]["cnt"] if result else 0
+
     logger.info("Graph reconciliation complete: %s", summary)
     return summary
 

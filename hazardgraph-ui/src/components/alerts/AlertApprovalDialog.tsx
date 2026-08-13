@@ -15,13 +15,24 @@ export function AlertApprovalDialog({ alert, onClose }: AlertApprovalDialogProps
   const dispatchMutation = useDispatchAlert();
 
   const [messageText, setMessageText] = useState(alert?.message_text || '');
+  const [langMode, setLangMode] = useState<'local' | 'english'>('local');
   const [rejectionReason, setRejectionReason] = useState('Inaccurate information');
   const [showRejectionInput, setShowRejectionInput] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
   useEffect(() => {
     setMessageText(alert?.message_text || '');
+    setLangMode('local');
   }, [alert]);
+
+  const switchLanguage = (mode: 'local' | 'english') => {
+    if (!alert) return;
+    const target = mode === 'english'
+      ? (alert.english_text || alert.message_text)
+      : alert.message_text;
+    setMessageText(target);
+    setLangMode(mode);
+  };
 
   if (!alert) return null;
 
@@ -103,6 +114,33 @@ export function AlertApprovalDialog({ alert, onClose }: AlertApprovalDialogProps
         </div>
 
         <div className="space-y-6 px-6 py-5">
+          {/* Language toggle */}
+          <div className="flex items-center justify-center gap-2">
+            <span className="text-xs text-gray-500">Preview language:</span>
+            <div className="flex rounded-lg border border-gray-700 bg-gray-800 p-0.5">
+              <button
+                onClick={() => switchLanguage('local')}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  langMode === 'local'
+                    ? 'bg-[#0F4C81] text-white'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                {alert.language.toUpperCase()}
+              </button>
+              <button
+                onClick={() => switchLanguage('english')}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  langMode === 'english'
+                    ? 'bg-[#0F4C81] text-white'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                ENGLISH
+              </button>
+            </div>
+          </div>
+
           {/* Phone Preview */}
           <div className="flex justify-center">
             <div className="w-48 rounded-2xl border-2 border-gray-700 bg-[#0A0F1E] p-3">

@@ -91,7 +91,7 @@ class AfricasTalkingService:
             # Update alert status
             try:
                 await postgres_session.execute(
-                    text("UPDATE alerts SET status = 'dispatch_failed' WHERE id = :aid::uuid"),
+                    text("UPDATE alerts SET status = 'dispatch_failed' WHERE id = CAST(:aid AS uuid)"),
                     {"aid": alert_id},
                 )
                 await postgres_session.commit()
@@ -124,7 +124,7 @@ class AfricasTalkingService:
                     text(
                         """INSERT INTO alert_deliveries
                            (alert_id, channel, recipient, status, delivered_at, created_at)
-                           VALUES (:aid::uuid, 'sms', :phone, :status, :now, :now)"""
+                           VALUES (CAST(:aid AS uuid), 'sms', :phone, :status, :now, :now)"""
                     ),
                     {
                         "aid": alert_id,
@@ -145,7 +145,7 @@ class AfricasTalkingService:
                        sent_count = :sent,
                        delivered_count = :delivered,
                        dispatched_at = :now
-                       WHERE id = :aid::uuid"""
+                       WHERE id = CAST(:aid AS uuid)"""
                 ),
                 {
                     "sent": len(recipients),

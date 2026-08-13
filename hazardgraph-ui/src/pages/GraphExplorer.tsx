@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { ForceGraph } from '../components/graph/ForceGraph';
 import { NodeDetailSheet } from '../components/graph/NodeDetailSheet';
 import { useGraphNodes, useGraphEdges } from '../hooks/useGraphData';
-import type { GraphNode } from '../hooks/useGraphData';
+import type { GraphNode, GraphEdge } from '../hooks/useGraphData';
 import { LoadingSpinner } from '../components/shared/LoadingSpinner';
 import { RegimeBadge } from '../components/shared/RegimeBadge';
 
@@ -314,10 +314,17 @@ export default function GraphExplorer() {
   const [activeTab, setActiveTab] = useState<Tab>('full-graph');
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
 
+  // Use the edges returned by /graph/nodes (nodesData.edges) rather than the
+  // separate /graph/edges call. The nodes endpoint builds its edges from the
+  // SAME records as its nodes, so edge source/target are guaranteed to match
+  // the node ids. The standalone /graph/edges endpoint returns edges whose
+  // source/target are Neo4j element_ids that do NOT match node domain ids,
+  // which caused the "nodes but 0 edges" bug in the ForceGraph.
   const { data: nodesData, isLoading: nodesLoading, error: nodesError } = useGraphNodes();
-  const { data: edges, isLoading: edgesLoading, error: edgesError } = useGraphEdges();
+  const { data: edgesData, isLoading: edgesLoading, error: edgesError } = useGraphEdges();
 
   const nodes: GraphNode[] = nodesData?.nodes ?? [];
+  const edges: GraphEdge[] = (nodesData?.edges as GraphEdge[] | undefined) ?? [];
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'full-graph', label: 'Full Graph' },
@@ -335,9 +342,9 @@ export default function GraphExplorer() {
           <h1 className="font-['Raleway'] text-xl font-bold text-white">
             Graph Explorer
           </h1>
-          {nodes.length > 0 && edges && (
+          {nodes.length > 0 && (
             <span className="text-sm text-gray-500">
-              {nodes.length} nodes · {Array.isArray(edges) ? edges.length : 0} edges
+              {nodes.length} nodes · {edges.length} edges
             </span>
           )}
         </div>
@@ -381,10 +388,10 @@ export default function GraphExplorer() {
               </div>
             )}
 
-            {!isLoading && !nodesError && nodes.length > 0 && edges && (
+            {!isLoading && !nodesError && nodes.length > 0 && (
               <ForceGraph
                 nodes={nodes as GraphNode[]}
-                edges={Array.isArray(edges) ? edges : []}
+                edges={edges}
                 onNodeClick={(node) => setSelectedNode(node)}
               />
             )}
@@ -403,7 +410,7 @@ export default function GraphExplorer() {
         {/* Node detail modal */}
         <NodeDetailSheet
           node={selectedNode}
-          edges={Array.isArray(edges) ? edges : []}
+          edges={edges}
           nodesMap={Object.fromEntries(nodes.map((n) => [String(n.id), n]))}
           onClose={() => setSelectedNode(null)}
           onJumpTo={(nodeId) => {
