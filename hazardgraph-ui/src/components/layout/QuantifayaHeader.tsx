@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { API_BASE_URL } from '@/lib/constants'
 import { useAuth } from '@/hooks/useAuth'
+import { useTheme } from '@/contexts/ThemeContext'
 import { TermTooltip } from '@/components/shared/TermTooltip'
 
 interface NavLinkProps {
@@ -47,6 +48,7 @@ function formatEAT(date: Date): string {
 export function QuantifayaHeader() {
   const [time, setTime] = useState(new Date())
   const [systemOk, setSystemOk] = useState(false)
+  const { theme, toggleTheme } = useTheme()
 
   useEffect(() => {
     const interval = setInterval(() => setTime(new Date()), 1000)
@@ -103,7 +105,7 @@ export function QuantifayaHeader() {
         </TermTooltip>
       </nav>
 
-      {/* Right: Clock + Status */}
+      {/* Right: Clock + Status + Theme toggle */}
       <div className="flex items-center gap-4">
         <span className="text-sm text-text-muted">{formatEAT(time)} EAT</span>
         <div className="flex items-center gap-1.5">
@@ -117,6 +119,23 @@ export function QuantifayaHeader() {
             {systemOk ? 'System OK' : 'Degraded'}
           </span>
         </div>
+        <button
+          onClick={toggleTheme}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-text-secondary transition-colors hover:text-text-primary"
+        >
+          {theme === 'dark' ? (
+            /* Sun icon */
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+          ) : (
+            /* Moon icon */
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+          )}
+        </button>
       </div>
     </header>
   )

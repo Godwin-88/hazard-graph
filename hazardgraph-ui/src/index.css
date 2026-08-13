@@ -27,3 +27,64 @@ body {
   background-color: var(--background);
   color: var(--text-primary);
 }
+
+/* ── Light mode ────────────────────────────────────────────
+   Toggled by the .light class on <html> (see ThemeContext).
+   Semantic tokens switch via CSS variables; hardcoded dark
+   utility classes are overridden below so the whole app is
+   readable on a projector in a bright hall. */
+.light {
+  --background: #F1F5F9;
+  --surface: #FFFFFF;
+  --surface-elevated: #F8FAFC;
+  --border: #E2E8F0;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #64748B;
+}
+
+/* Page / header / card backgrounds */
+.light .bg-\[\#0A0F1E\] { background-color: #F1F5F9 !important; }
+.light .bg-\[\#111827\] { background-color: #FFFFFF !important; }
+.light .bg-\[\#111827\]\/95 { background-color: rgba(255, 255, 255, 0.95) !important; }
+.light .bg-\[\#1a2235\] { background-color: #F8FAFC !important; }
+.light .bg-\[\#1F2937\] { background-color: #F8FAFC !important; }
+.light .bg-gray-900 { background-color: #F1F5F9 !important; }
+.light .bg-gray-800 { background-color: #E2E8F0 !important; }
+.light .bg-gray-800\/50 { background-color: rgba(226, 232, 240, 0.5) !important; }
+.light .bg-gray-800\/30 { background-color: rgba(226, 232, 240, 0.3) !important; }
+.light .bg-gray-800\/20 { background-color: rgba(226, 232, 240, 0.2) !important; }
+.light .bg-gray-700 { background-color: #CBD5E1 !important; }
+.light .bg-gray-700\/50 { background-color: rgba(203, 213, 225, 0.5) !important; }
+
+/* Text colours */
+.light .text-white { color: #0F172A !important; }
+.light .text-gray-300 { color: #334155 !important; }
+.light .text-gray-400 { color: #64748B !important; }
+.light .text-gray-500 { color: #94A3B8 !important; }
+.light .text-gray-600 { color: #475569 !important; }
+
+/* Keep white text on coloured buttons/accents so contrast is preserved */
+.light .bg-\[\#0F4C81\].text-white,
+.light .bg-\[\#00C896\].text-white,
+.light .bg-risk-red.text-white,
+.light .bg-red-600.text-white,
+.light .bg-risk-green.text-white,
+.light .bg-\[\#0F4C81\] .text-white,
+.light .bg-\[\#00C896\] .text-white,
+.light .bg-risk-red .text-white,
+.light .bg-red-600 .text-white,
+.light .bg-risk-green .text-white {
+  color: #FFFFFF !important;
+}
+
+/* Borders */
+.light .border-gray-800 { border-color: #E2E8F0 !important; }
+.light .border-gray-700 { border-color: #CBD5E1 !important; }
+.light .border-gray-600 { border-color: #CBD5E1 !important; }
+
+/* Modal overlay — keep a translucent dark scrim so dialogs pop */
+.light .bg-black\/60 { background-color: rgba(15, 23, 42, 0.5) !important; }
+
+/* Force graph canvas background — switch to a light canvas in light mode */
+.light .bg-\[\#0A0F1E\] canvas { background-color: #F8FAFC !important; }

@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface GraphNode {
   id: string;
@@ -97,6 +98,8 @@ function nodeDisplayLabel(n: GraphNode): string {
 export function ForceGraph({ nodes, edges, onNodeClick }: ForceGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<any>(null);
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
   // Default to the type-overview so the graph is readable instead of dumping
   // thousands of indistinguishable nodes at once.
   const [viewMode, setViewMode] = useState<'types' | 'nodes'>('types');
@@ -314,6 +317,7 @@ export function ForceGraph({ nodes, edges, onNodeClick }: ForceGraphProps) {
           graphData={graphData}
           graphLibLoaded={graphLibLoaded}
           onNodeClick={handleNodeClick}
+          isLight={isLight}
         />
       </div>
 
@@ -446,6 +450,7 @@ function GraphVisualization({
   graphData,
   graphLibLoaded,
   onNodeClick,
+  isLight,
 }: {
   containerRef: React.RefObject<HTMLDivElement>;
   graphData: {
@@ -454,11 +459,16 @@ function GraphVisualization({
   };
   graphLibLoaded: boolean;
   onNodeClick: (node: { id: string }) => void;
+  isLight: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [GraphComponent, setGraphComponent] = useState<React.ComponentType<any> | null>(null);
   const graphInstanceRef = useRef<any>(null);
   const frameRef = useRef<number>(0);
+  const bgColor = isLight ? '#F8FAFC' : '#0A0F1E';
+  const labelColor = isLight ? '#0F172A' : '#E5E7EB';
+  const borderColor = isLight ? 'rgba(15, 23, 42, 0.2)' : 'rgba(255,255,255,0.2)';
+  const aggRingColor = isLight ? 'rgba(15, 23, 42, 0.5)' : 'rgba(255,255,255,0.5)';
 
   // Load the actual component when library is ready
   useEffect(() => {
@@ -501,7 +511,7 @@ function GraphVisualization({
     });
 
     const draw = () => {
-      ctx.fillStyle = '#0A0F1E';
+      ctx.fillStyle = bgColor;
       ctx.fillRect(0, 0, w, h);
 
       // Draw edges first
@@ -541,18 +551,18 @@ function GraphVisualization({
         if (node.isAggregate) {
           ctx.beginPath();
           ctx.arc(node.x, node.y, size + 4, 0, 2 * Math.PI);
-          ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+          ctx.strokeStyle = aggRingColor;
           ctx.lineWidth = 2;
           ctx.stroke();
         }
 
         // Node border
-        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctx.strokeStyle = borderColor;
         ctx.lineWidth = 1;
         ctx.stroke();
 
         // Label
-        ctx.fillStyle = '#E5E7EB';
+        ctx.fillStyle = labelColor;
         ctx.font = node.isAggregate ? 'bold 11px Inter, sans-serif' : '10px Inter, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(node.label, node.x, node.y + size + 14);
@@ -590,7 +600,7 @@ function GraphVisualization({
       canvas.removeEventListener('click', handleClick);
       window.removeEventListener('resize', handleResize);
     };
-  }, [graphData, GraphComponent, containerRef, onNodeClick]);
+  }, [graphData, GraphComponent, containerRef, onNodeClick, bgColor, labelColor, borderColor, aggRingColor]);
 
   // If the force graph library is loaded, render the actual component
   if (GraphComponent) {
@@ -601,14 +611,16 @@ function GraphVisualization({
         nodeLabel="label"
         nodeColor={(node: any) => NODE_COLORS[node.type] || '#6B7280'}
         nodeVal={nodeVal}
-        nodeCanvasObject={nodeCanvasObject}
+        nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) =>
+          nodeCanvasObject(node, ctx, globalScale, { labelColor, borderColor, aggRingColor })
+        }
         linkColor={(link: any) => {
           const w = link.weight ?? 1;
           return w > 0.6 ? 'rgba(139, 92, 246, 0.7)' : w > 0.3 ? 'rgba(139, 92, 246, 0.4)' : 'rgba(75, 85, 99, 0.3)';
         }}
         linkWidth={(link: any) => (link.weight ?? 1) * 2 + 0.5}
         onNodeClick={onNodeClick}
-        backgroundColor="#0A0F1E"
+        backgroundColor={bgColor}
         width={containerRef.current?.clientWidth || 800}
         height={containerRef.current?.clientHeight || 600}
       />
@@ -633,7 +645,12 @@ function nodeVal(node: any): number {
   return NODE_SIZES[node.type] || 7;
 }
 
-function nodeCanvasObject(node: any, ctx: CanvasRenderingContext2D, globalScale: number) {
+function nodeCanvasObject(
+  node: any,
+  ctx: CanvasRenderingContext2D,
+  globalScale: number,
+  colors: { labelColor: string; borderColor: string; aggRingColor: string },
+) {
   const label = node.label || node.id;
   const fontSize = (node.isAggregate ? 11 : 9) / globalScale;
   const color = NODE_COLORS[node.type] || '#6B7280';
@@ -655,13 +672,13 @@ function nodeCanvasObject(node: any, ctx: CanvasRenderingContext2D, globalScale:
   if (node.isAggregate) {
     ctx.beginPath();
     ctx.arc(node.x, node.y, size + 4, 0, 2 * Math.PI);
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.strokeStyle = colors.aggRingColor;
     ctx.lineWidth = 2 / globalScale;
     ctx.stroke();
   }
 
   // Border
-  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.strokeStyle = colors.borderColor;
   ctx.lineWidth = 1 / globalScale;
   ctx.stroke();
 
@@ -669,6 +686,6 @@ function nodeCanvasObject(node: any, ctx: CanvasRenderingContext2D, globalScale:
   ctx.font = `${fontSize}px Inter, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  ctx.fillStyle = '#E5E7EB';
+  ctx.fillStyle = colors.labelColor;
   ctx.fillText(label, node.x, node.y + size + 2);
 }
